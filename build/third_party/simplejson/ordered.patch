@@ -1,0 +1,712 @@
+Index: scanner.py
+===================================================================
+--- scanner.py	(revision 177)
++++ scanner.py	(revision 178)
+@@ -23,6 +23,7 @@
+     parse_int = context.parse_int
+     parse_constant = context.parse_constant
+     object_hook = context.object_hook
++    object_pairs_hook = context.object_pairs_hook
+ 
+     def _scan_once(string, idx):
+         try:
+@@ -34,7 +35,7 @@
+             return parse_string(string, idx + 1, encoding, strict)
+         elif nextchar == '{':
+             return parse_object((string, idx + 1), encoding, strict,
+-                _scan_once, object_hook)
++                _scan_once, object_hook, object_pairs_hook)
+         elif nextchar == '[':
+             return parse_array((string, idx + 1), _scan_once)
+         elif nextchar == 'n' and string[idx:idx + 4] == 'null':
+Index: tests/test_decode.py
+===================================================================
+--- tests/test_decode.py	(revision 177)
++++ tests/test_decode.py	(revision 178)
+@@ -1,5 +1,6 @@
+ import decimal
+ from unittest import TestCase
++from StringIO import StringIO
+ 
+ import simplejson as json
+ 
+@@ -20,3 +21,20 @@
+         # exercise the uncommon cases. The array cases are already covered.
+         rval = json.loads('{   "key"    :    "value"    ,  "k":"v"    }')
+         self.assertEquals(rval, {"key":"value", "k":"v"})
++
++    def test_object_pairs_hook(self):
++        s = '{"xkd":1, "kcw":2, "art":3, "hxm":4, "qrt":5, "pad":6, "hoy":7}'
++        p = [("xkd", 1), ("kcw", 2), ("art", 3), ("hxm", 4),
++             ("qrt", 5), ("pad", 6), ("hoy", 7)]
++        self.assertEqual(json.loads(s), eval(s))
++        self.assertEqual(json.loads(s, object_pairs_hook=lambda x: x), p)
++        self.assertEqual(json.load(StringIO(s),
++                                   object_pairs_hook=lambda x: x), p)
++        od = json.loads(s, object_pairs_hook=json.OrderedDict)
++        self.assertEqual(od, json.OrderedDict(p))
++        self.assertEqual(type(od), json.OrderedDict)
++        # the object_pairs_hook takes priority over the object_hook
++        self.assertEqual(json.loads(s,
++                                    object_pairs_hook=json.OrderedDict,
++                                    object_hook=lambda x: None),
++                         json.OrderedDict(p))
+Index: tests/test_unicode.py
+===================================================================
+--- tests/test_unicode.py	(revision 177)
++++ tests/test_unicode.py	(revision 178)
+@@ -55,6 +55,22 @@
+             s = '"\\u%04x"' % (i,)
+             self.assertEquals(json.loads(s), u)
+ 
++    def test_object_pairs_hook_with_unicode(self):
++        s = u'{"xkd":1, "kcw":2, "art":3, "hxm":4, "qrt":5, "pad":6, "hoy":7}'
++        p = [(u"xkd", 1), (u"kcw", 2), (u"art", 3), (u"hxm", 4),
++             (u"qrt", 5), (u"pad", 6), (u"hoy", 7)]
++        self.assertEqual(json.loads(s), eval(s))
++        self.assertEqual(json.loads(s, object_pairs_hook=lambda x: x), p)
++        od = json.loads(s, object_pairs_hook=json.OrderedDict)
++        self.assertEqual(od, json.OrderedDict(p))
++        self.assertEqual(type(od), json.OrderedDict)
++        # the object_pairs_hook takes priority over the object_hook
++        self.assertEqual(json.loads(s,
++                                    object_pairs_hook=json.OrderedDict,
++                                    object_hook=lambda x: None),
++                         json.OrderedDict(p))
++
++
+     def test_default_encoding(self):
+         self.assertEquals(json.loads(u'{"a": "\xe9"}'.encode('utf-8')),
+             {'a': u'\xe9'})
+Index: tool.py
+===================================================================
+--- tool.py	(revision 177)
++++ tool.py	(revision 178)
+@@ -11,7 +11,7 @@
+ 
+ """
+ import sys
+-import simplejson
++import simplejson as json
+ 
+ def main():
+     if len(sys.argv) == 1:
+@@ -26,10 +26,10 @@
+     else:
+         raise SystemExit(sys.argv[0] + " [infile [outfile]]")
+     try:
+-        obj = simplejson.load(infile)
++        obj = json.load(infile, object_pairs_hook=json.OrderedDict)
+     except ValueError, e:
+         raise SystemExit(e)
+-    simplejson.dump(obj, outfile, sort_keys=True, indent=4)
++    json.dump(obj, outfile, sort_keys=True, indent=4)
+     outfile.write('\n')
+ 
+ 
+Index: __init__.py
+===================================================================
+--- __init__.py	(revision 177)
++++ __init__.py	(revision 178)
+@@ -101,12 +101,17 @@
+ __all__ = [
+     'dump', 'dumps', 'load', 'loads',
+     'JSONDecoder', 'JSONEncoder',
++    'OrderedDict',
+ ]
+ 
+ __author__ = 'Bob Ippolito <bob@redivi.com>'
+ 
+ from decoder import JSONDecoder
+ from encoder import JSONEncoder
++try:
++    from collections import OrderedDict
++except ImportError:
++    from ordered_dict import OrderedDict
+ 
+ _default_encoder = JSONEncoder(
+     skipkeys=False,
+@@ -238,26 +243,51 @@
+         **kw).encode(obj)
+ 
+ 
+-_default_decoder = JSONDecoder(encoding=None, object_hook=None)
++_default_decoder = JSONDecoder(encoding=None, object_hook=None,
++                               object_pairs_hook=None)
+ 
+ 
+ def load(fp, encoding=None, cls=None, object_hook=None, parse_float=None,
+-        parse_int=None, parse_constant=None, **kw):
++        parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+     """Deserialize ``fp`` (a ``.read()``-supporting file-like object containing
+     a JSON document) to a Python object.
+ 
+-    If the contents of ``fp`` is encoded with an ASCII based encoding other
+-    than utf-8 (e.g. latin-1), then an appropriate ``encoding`` name must
+-    be specified. Encodings that are not ASCII based (such as UCS-2) are
+-    not allowed, and should be wrapped with
+-    ``codecs.getreader(fp)(encoding)``, or simply decoded to a ``unicode``
+-    object and passed to ``loads()``
++    *encoding* determines the encoding used to interpret any
++    :class:`str` objects decoded by this instance (``'utf-8'`` by
++    default).  It has no effect when decoding :class:`unicode` objects.
+ 
+-    ``object_hook`` is an optional function that will be called with the
+-    result of any object literal decode (a ``dict``). The return value of
+-    ``object_hook`` will be used instead of the ``dict``. This feature
+-    can be used to implement custom decoders (e.g. JSON-RPC class hinting).
++    Note that currently only encodings that are a superset of ASCII work,
++    strings of other encodings should be passed in as :class:`unicode`.
+ 
++    *object_hook*, if specified, will be called with the result of every
++    JSON object decoded and its return value will be used in place of the
++    given :class:`dict`.  This can be used to provide custom
++    deserializations (e.g. to support JSON-RPC class hinting).
++
++    *object_pairs_hook* is an optional function that will be called with
++    the result of any object literal decode with an ordered list of pairs.
++    The return value of *object_pairs_hook* will be used instead of the
++    :class:`dict`.  This feature can be used to implement custom decoders
++    that rely on the order that the key and value pairs are decoded (for
++    example, :func:`collections.OrderedDict` will remember the order of
++    insertion). If *object_hook* is also defined, the *object_pairs_hook*
++    takes priority.
++
++    *parse_float*, if specified, will be called with the string of every
++    JSON float to be decoded.  By default, this is equivalent to
++    ``float(num_str)``. This can be used to use another datatype or parser
++    for JSON floats (e.g. :class:`decimal.Decimal`).
++
++    *parse_int*, if specified, will be called with the string of every
++    JSON int to be decoded.  By default, this is equivalent to
++    ``int(num_str)``.  This can be used to use another datatype or parser
++    for JSON integers (e.g. :class:`float`).
++
++    *parse_constant*, if specified, will be called with one of the
++    following strings: ``'-Infinity'``, ``'Infinity'``, ``'NaN'``.  This
++    can be used to raise an exception if invalid JSON numbers are
++    encountered.
++
+     To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+     kwarg.
+ 
+@@ -265,51 +295,65 @@
+     return loads(fp.read(),
+         encoding=encoding, cls=cls, object_hook=object_hook,
+         parse_float=parse_float, parse_int=parse_int,
+-        parse_constant=parse_constant, **kw)
++        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook,
++        **kw)
+ 
+ 
+ def loads(s, encoding=None, cls=None, object_hook=None, parse_float=None,
+-        parse_int=None, parse_constant=None, **kw):
++        parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+     """Deserialize ``s`` (a ``str`` or ``unicode`` instance containing a JSON
+     document) to a Python object.
+ 
+-    If ``s`` is a ``str`` instance and is encoded with an ASCII based encoding
+-    other than utf-8 (e.g. latin-1) then an appropriate ``encoding`` name
+-    must be specified. Encodings that are not ASCII based (such as UCS-2)
+-    are not allowed and should be decoded to ``unicode`` first.
++    *encoding* determines the encoding used to interpret any
++    :class:`str` objects decoded by this instance (``'utf-8'`` by
++    default).  It has no effect when decoding :class:`unicode` objects.
+ 
+-    ``object_hook`` is an optional function that will be called with the
+-    result of any object literal decode (a ``dict``). The return value of
+-    ``object_hook`` will be used instead of the ``dict``. This feature
+-    can be used to implement custom decoders (e.g. JSON-RPC class hinting).
++    Note that currently only encodings that are a superset of ASCII work,
++    strings of other encodings should be passed in as :class:`unicode`.
+ 
+-    ``parse_float``, if specified, will be called with the string
+-    of every JSON float to be decoded. By default this is equivalent to
+-    float(num_str). This can be used to use another datatype or parser
+-    for JSON floats (e.g. decimal.Decimal).
++    *object_hook*, if specified, will be called with the result of every
++    JSON object decoded and its return value will be used in place of the
++    given :class:`dict`.  This can be used to provide custom
++    deserializations (e.g. to support JSON-RPC class hinting).
+ 
+-    ``parse_int``, if specified, will be called with the string
+-    of every JSON int to be decoded. By default this is equivalent to
+-    int(num_str). This can be used to use another datatype or parser
+-    for JSON integers (e.g. float).
++    *object_pairs_hook* is an optional function that will be called with
++    the result of any object literal decode with an ordered list of pairs.
++    The return value of *object_pairs_hook* will be used instead of the
++    :class:`dict`.  This feature can be used to implement custom decoders
++    that rely on the order that the key and value pairs are decoded (for
++    example, :func:`collections.OrderedDict` will remember the order of
++    insertion). If *object_hook* is also defined, the *object_pairs_hook*
++    takes priority.
+ 
+-    ``parse_constant``, if specified, will be called with one of the
+-    following strings: -Infinity, Infinity, NaN, null, true, false.
+-    This can be used to raise an exception if invalid JSON numbers
+-    are encountered.
++    *parse_float*, if specified, will be called with the string of every
++    JSON float to be decoded.  By default, this is equivalent to
++    ``float(num_str)``. This can be used to use another datatype or parser
++    for JSON floats (e.g. :class:`decimal.Decimal`).
+ 
++    *parse_int*, if specified, will be called with the string of every
++    JSON int to be decoded.  By default, this is equivalent to
++    ``int(num_str)``.  This can be used to use another datatype or parser
++    for JSON integers (e.g. :class:`float`).
++
++    *parse_constant*, if specified, will be called with one of the
++    following strings: ``'-Infinity'``, ``'Infinity'``, ``'NaN'``.  This
++    can be used to raise an exception if invalid JSON numbers are
++    encountered.
++
+     To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+     kwarg.
+ 
+     """
+     if (cls is None and encoding is None and object_hook is None and
+             parse_int is None and parse_float is None and
+-            parse_constant is None and not kw):
++            parse_constant is None and object_pairs_hook is None and not kw):
+         return _default_decoder.decode(s)
+     if cls is None:
+         cls = JSONDecoder
+     if object_hook is not None:
+         kw['object_hook'] = object_hook
++    if object_pairs_hook is not None:
++        kw['object_pairs_hook'] = object_pairs_hook
+     if parse_float is not None:
+         kw['parse_float'] = parse_float
+     if parse_int is not None:
+Index: _speedups.c
+===================================================================
+--- _speedups.c	(revision 177)
++++ _speedups.c	(revision 178)
+@@ -35,6 +35,7 @@
+     PyObject *encoding;
+     PyObject *strict;
+     PyObject *object_hook;
++    PyObject *pairs_hook;
+     PyObject *parse_float;
+     PyObject *parse_int;
+     PyObject *parse_constant;
+@@ -44,6 +45,7 @@
+     {"encoding", T_OBJECT, offsetof(PyScannerObject, encoding), READONLY, "encoding"},
+     {"strict", T_OBJECT, offsetof(PyScannerObject, strict), READONLY, "strict"},
+     {"object_hook", T_OBJECT, offsetof(PyScannerObject, object_hook), READONLY, "object_hook"},
++    {"object_pairs_hook", T_OBJECT, offsetof(PyScannerObject, pairs_hook), READONLY, "object_pairs_hook"},
+     {"parse_float", T_OBJECT, offsetof(PyScannerObject, parse_float), READONLY, "parse_float"},
+     {"parse_int", T_OBJECT, offsetof(PyScannerObject, parse_int), READONLY, "parse_int"},
+     {"parse_constant", T_OBJECT, offsetof(PyScannerObject, parse_constant), READONLY, "parse_constant"},
+@@ -891,6 +893,7 @@
+     Py_VISIT(s->encoding);
+     Py_VISIT(s->strict);
+     Py_VISIT(s->object_hook);
++    Py_VISIT(s->pairs_hook);
+     Py_VISIT(s->parse_float);
+     Py_VISIT(s->parse_int);
+     Py_VISIT(s->parse_constant);
+@@ -906,6 +909,7 @@
+     Py_CLEAR(s->encoding);
+     Py_CLEAR(s->strict);
+     Py_CLEAR(s->object_hook);
++    Py_CLEAR(s->pairs_hook);
+     Py_CLEAR(s->parse_float);
+     Py_CLEAR(s->parse_int);
+     Py_CLEAR(s->parse_constant);
+@@ -919,17 +923,21 @@
+     *next_idx_ptr is a return-by-reference index to the first character after
+         the closing curly brace.
+ 
+-    Returns a new PyObject (usually a dict, but object_hook can change that)
++    Returns a new PyObject (usually a dict, but object_hook or
++    object_pairs_hook can change that)
+     */
+     char *str = PyString_AS_STRING(pystr);
+     Py_ssize_t end_idx = PyString_GET_SIZE(pystr) - 1;
+-    PyObject *rval = PyDict_New();
++    PyObject *rval;
++    PyObject *pairs;
++    PyObject *item;
+     PyObject *key = NULL;
+     PyObject *val = NULL;
+     char *encoding = PyString_AS_STRING(s->encoding);
+     int strict = PyObject_IsTrue(s->strict);
+     Py_ssize_t next_idx;
+-    if (rval == NULL)
++    pairs = PyList_New(0);
++    if (pairs == NULL)
+         return NULL;
+ 
+     /* skip whitespace after { */
+@@ -962,11 +970,16 @@
+             if (val == NULL)
+                 goto bail;
+ 
+-            if (PyDict_SetItem(rval, key, val) == -1)
++            item = PyTuple_Pack(2, key, val);
++            if (item == NULL)
+                 goto bail;
+-
+             Py_CLEAR(key);
+             Py_CLEAR(val);
++            if (PyList_Append(pairs, item) == -1) {
++                Py_DECREF(item);
++                goto bail;
++            }
++            Py_DECREF(item);
+             idx = next_idx;
+ 
+             /* skip whitespace before } or , */
+@@ -992,6 +1005,23 @@
+         raise_errmsg("Expecting object", pystr, end_idx);
+         goto bail;
+     }
++
++    /* if pairs_hook is not None: rval = object_pairs_hook(pairs) */
++    if (s->pairs_hook != Py_None) {
++        val = PyObject_CallFunctionObjArgs(s->pairs_hook, pairs, NULL);
++        if (val == NULL)
++            goto bail;
++        Py_DECREF(pairs);
++        *next_idx_ptr = idx + 1;
++        return val;
++    }
++
++    rval = PyObject_CallFunctionObjArgs((PyObject *)(&PyDict_Type),
++                                        pairs, NULL);
++    if (rval == NULL)
++        goto bail;
++    Py_CLEAR(pairs);
++
+     /* if object_hook is not None: rval = object_hook(rval) */
+     if (s->object_hook != Py_None) {
+         val = PyObject_CallFunctionObjArgs(s->object_hook, rval, NULL);
+@@ -1006,7 +1036,7 @@
+ bail:
+     Py_XDECREF(key);
+     Py_XDECREF(val);
+-    Py_DECREF(rval);
++    Py_XDECREF(pairs);
+     return NULL;
+ }
+ 
+@@ -1021,14 +1051,18 @@
+     */
+     Py_UNICODE *str = PyUnicode_AS_UNICODE(pystr);
+     Py_ssize_t end_idx = PyUnicode_GET_SIZE(pystr) - 1;
++    PyObject *rval;
++    PyObject *pairs;
++    PyObject *item;
++    PyObject *key = NULL;
+     PyObject *val = NULL;
+-    PyObject *rval = PyDict_New();
+-    PyObject *key = NULL;
+     int strict = PyObject_IsTrue(s->strict);
+     Py_ssize_t next_idx;
+-    if (rval == NULL)
++
++    pairs = PyList_New(0);
++    if (pairs == NULL)
+         return NULL;
+-
++    
+     /* skip whitespace after { */
+     while (idx <= end_idx && IS_WHITESPACE(str[idx])) idx++;
+ 
+@@ -1059,11 +1093,16 @@
+             if (val == NULL)
+                 goto bail;
+ 
+-            if (PyDict_SetItem(rval, key, val) == -1)
++            item = PyTuple_Pack(2, key, val);
++            if (item == NULL)
+                 goto bail;
+-
+             Py_CLEAR(key);
+             Py_CLEAR(val);
++            if (PyList_Append(pairs, item) == -1) {
++                Py_DECREF(item);
++                goto bail;
++            }
++            Py_DECREF(item);
+             idx = next_idx;
+ 
+             /* skip whitespace before } or , */
+@@ -1091,6 +1130,22 @@
+         goto bail;
+     }
+ 
++    /* if pairs_hook is not None: rval = object_pairs_hook(pairs) */
++    if (s->pairs_hook != Py_None) {
++        val = PyObject_CallFunctionObjArgs(s->pairs_hook, pairs, NULL);
++        if (val == NULL)
++            goto bail;
++        Py_DECREF(pairs);
++        *next_idx_ptr = idx + 1;
++        return val;
++    }
++
++    rval = PyObject_CallFunctionObjArgs((PyObject *)(&PyDict_Type),
++                                        pairs, NULL);
++    if (rval == NULL)
++        goto bail;
++    Py_CLEAR(pairs);
++
+     /* if object_hook is not None: rval = object_hook(rval) */
+     if (s->object_hook != Py_None) {
+         val = PyObject_CallFunctionObjArgs(s->object_hook, rval, NULL);
+@@ -1105,7 +1160,7 @@
+ bail:
+     Py_XDECREF(key);
+     Py_XDECREF(val);
+-    Py_DECREF(rval);
++    Py_XDECREF(pairs);
+     return NULL;
+ }
+ 
+@@ -1648,6 +1703,7 @@
+         s->encoding = NULL;
+         s->strict = NULL;
+         s->object_hook = NULL;
++        s->pairs_hook = NULL;
+         s->parse_float = NULL;
+         s->parse_int = NULL;
+         s->parse_constant = NULL;
+@@ -1690,6 +1746,9 @@
+     s->object_hook = PyObject_GetAttrString(ctx, "object_hook");
+     if (s->object_hook == NULL)
+         goto bail;
++    s->pairs_hook = PyObject_GetAttrString(ctx, "object_pairs_hook");
++    if (s->pairs_hook == NULL)
++        goto bail;
+     s->parse_float = PyObject_GetAttrString(ctx, "parse_float");
+     if (s->parse_float == NULL)
+         goto bail;
+@@ -1706,6 +1765,7 @@
+     Py_CLEAR(s->encoding);
+     Py_CLEAR(s->strict);
+     Py_CLEAR(s->object_hook);
++    Py_CLEAR(s->pairs_hook);
+     Py_CLEAR(s->parse_float);
+     Py_CLEAR(s->parse_int);
+     Py_CLEAR(s->parse_constant);
+Index: decoder.py
+===================================================================
+--- decoder.py	(revision 177)
++++ decoder.py	(revision 178)
+@@ -149,8 +149,8 @@
+ WHITESPACE_STR = ' \t\n\r'
+ 
+ def JSONObject((s, end), encoding, strict, scan_once, object_hook,
+-        _w=WHITESPACE.match, _ws=WHITESPACE_STR):
+-    pairs = {}
++        object_pairs_hook, _w=WHITESPACE.match, _ws=WHITESPACE_STR):
++    pairs = []
+     # Use a slice to prevent IndexError from being raised, the following
+     # check will raise a more specific ValueError if the string is empty
+     nextchar = s[end:end + 1]
+@@ -189,7 +189,7 @@
+             value, end = scan_once(s, end)
+         except StopIteration:
+             raise ValueError(errmsg("Expecting object", s, end))
+-        pairs[key] = value
++        pairs.append((key, value))
+ 
+         try:
+             nextchar = s[end]
+@@ -220,6 +220,10 @@
+         if nextchar != '"':
+             raise ValueError(errmsg("Expecting property name", s, end - 1))
+ 
++    if object_pairs_hook is not None:
++        result = object_pairs_hook(pairs)
++        return result, end
++    pairs = dict(pairs)
+     if object_hook is not None:
+         pairs = object_hook(pairs)
+     return pairs, end
+@@ -291,37 +295,54 @@
+     """
+ 
+     def __init__(self, encoding=None, object_hook=None, parse_float=None,
+-            parse_int=None, parse_constant=None, strict=True):
+-        """``encoding`` determines the encoding used to interpret any ``str``
+-        objects decoded by this instance (utf-8 by default).  It has no
+-        effect when decoding ``unicode`` objects.
++            parse_int=None, parse_constant=None, strict=True,
++            object_pairs_hook=None):
++        """
++        *encoding* determines the encoding used to interpret any
++        :class:`str` objects decoded by this instance (``'utf-8'`` by
++        default).  It has no effect when decoding :class:`unicode` objects.
+ 
+         Note that currently only encodings that are a superset of ASCII work,
+-        strings of other encodings should be passed in as ``unicode``.
++        strings of other encodings should be passed in as :class:`unicode`.
+ 
+-        ``object_hook``, if specified, will be called with the result
+-        of every JSON object decoded and its return value will be used in
+-        place of the given ``dict``.  This can be used to provide custom
++        *object_hook*, if specified, will be called with the result of every
++        JSON object decoded and its return value will be used in place of the
++        given :class:`dict`.  This can be used to provide custom
+         deserializations (e.g. to support JSON-RPC class hinting).
+ 
+-        ``parse_float``, if specified, will be called with the string
+-        of every JSON float to be decoded. By default this is equivalent to
+-        float(num_str). This can be used to use another datatype or parser
+-        for JSON floats (e.g. decimal.Decimal).
++        *object_pairs_hook* is an optional function that will be called with
++        the result of any object literal decode with an ordered list of pairs.
++        The return value of *object_pairs_hook* will be used instead of the
++        :class:`dict`.  This feature can be used to implement custom decoders
++        that rely on the order that the key and value pairs are decoded (for
++        example, :func:`collections.OrderedDict` will remember the order of
++        insertion). If *object_hook* is also defined, the *object_pairs_hook*
++        takes priority.
+ 
+-        ``parse_int``, if specified, will be called with the string
+-        of every JSON int to be decoded. By default this is equivalent to
+-        int(num_str). This can be used to use another datatype or parser
+-        for JSON integers (e.g. float).
++        *parse_float*, if specified, will be called with the string of every
++        JSON float to be decoded.  By default, this is equivalent to
++        ``float(num_str)``. This can be used to use another datatype or parser
++        for JSON floats (e.g. :class:`decimal.Decimal`).
+ 
+-        ``parse_constant``, if specified, will be called with one of the
+-        following strings: -Infinity, Infinity, NaN.
+-        This can be used to raise an exception if invalid JSON numbers
+-        are encountered.
++        *parse_int*, if specified, will be called with the string of every
++        JSON int to be decoded.  By default, this is equivalent to
++        ``int(num_str)``.  This can be used to use another datatype or parser
++        for JSON integers (e.g. :class:`float`).
+ 
++        *parse_constant*, if specified, will be called with one of the
++        following strings: ``'-Infinity'``, ``'Infinity'``, ``'NaN'``.  This
++        can be used to raise an exception if invalid JSON numbers are
++        encountered.
++
++        *strict* controls the parser's behavior when it encounters an
++        invalid control character in a string. The default setting of
++        ``True`` means that unescaped control characters are parse errors, if
++        ``False`` then control characters will be allowed in strings.
++
+         """
+         self.encoding = encoding
+         self.object_hook = object_hook
++        self.object_pairs_hook = object_pairs_hook
+         self.parse_float = parse_float or float
+         self.parse_int = parse_int or int
+         self.parse_constant = parse_constant or _CONSTANTS.__getitem__
+Index: ordered_dict.py
+===================================================================
+--- ordered_dict.py	(revision 0)
++++ ordered_dict.py	(revision 178)
+@@ -0,0 +1,103 @@
++"""Drop-in replacement for collections.OrderedDict by Raymond Hettinger
++
++http://code.activestate.com/recipes/576693/
++
++"""
++from UserDict import DictMixin
++
++class OrderedDict(dict, DictMixin):
++
++    def __init__(self, *args, **kwds):
++        if len(args) > 1:
++            raise TypeError('expected at most 1 arguments, got %d' % len(args))
++        try:
++            self.__end
++        except AttributeError:
++            self.clear()
++        self.update(*args, **kwds)
++
++    def clear(self):
++        self.__end = end = []
++        end += [None, end, end]         # sentinel node for doubly linked list
++        self.__map = {}                 # key --> [key, prev, next]
++        dict.clear(self)
++
++    def __setitem__(self, key, value):
++        if key not in self:
++            end = self.__end
++            curr = end[1]
++            curr[2] = end[1] = self.__map[key] = [key, curr, end]
++        dict.__setitem__(self, key, value)
++
++    def __delitem__(self, key):
++        dict.__delitem__(self, key)
++        key, prev, next = self.__map.pop(key)
++        prev[2] = next
++        next[1] = prev
++
++    def __iter__(self):
++        end = self.__end
++        curr = end[2]
++        while curr is not end:
++            yield curr[0]
++            curr = curr[2]
++
++    def __reversed__(self):
++        end = self.__end
++        curr = end[1]
++        while curr is not end:
++            yield curr[0]
++            curr = curr[1]
++
++    def popitem(self, last=True):
++        if not self:
++            raise KeyError('dictionary is empty')
++        key = reversed(self).next() if last else iter(self).next()
++        value = self.pop(key)
++        return key, value
++
++    def __reduce__(self):
++        items = [[k, self[k]] for k in self]
++        tmp = self.__map, self.__end
++        del self.__map, self.__end
++        inst_dict = vars(self).copy()
++        self.__map, self.__end = tmp
++        if inst_dict:
++            return (self.__class__, (items,), inst_dict)
++        return self.__class__, (items,)
++
++    def keys(self):
++        return list(self)
++
++    setdefault = DictMixin.setdefault
++    update = DictMixin.update
++    pop = DictMixin.pop
++    values = DictMixin.values
++    items = DictMixin.items
++    iterkeys = DictMixin.iterkeys
++    itervalues = DictMixin.itervalues
++    iteritems = DictMixin.iteritems
++
++    def __repr__(self):
++        if not self:
++            return '%s()' % (self.__class__.__name__,)
++        return '%s(%r)' % (self.__class__.__name__, self.items())
++
++    def copy(self):
++        return self.__class__(self)
++
++    @classmethod
++    def fromkeys(cls, iterable, value=None):
++        d = cls()
++        for key in iterable:
++            d[key] = value
++        return d
++
++    def __eq__(self, other):
++        if isinstance(other, OrderedDict):
++            return len(self)==len(other) and \
++                   all(p==q for p, q in  zip(self.items(), other.items()))
++        return dict.__eq__(self, other)
++
++    def __ne__(self, other):
++        return not self == other

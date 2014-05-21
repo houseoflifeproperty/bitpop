@@ -1,0 +1,1 @@
+[["http://build.chromium.org/p/tryserver.chromium/json/builders/linux_clang?filter=1","{\"category\":null,\"basedir\":\"linux_clang\",\"cachedBuilds\":[1485,1486,1487,1488,1489,1490,1491,1492,1493,1494],\"state\":\"idle\",\"slaves\":[\"vm165-m4\",\"vm104-m4\",\"vm113-m4\"],\"currentBuilds\":[],\"pendingBuilds\":0}"]]

@@ -1,0 +1,14 @@
+set noparent
+
+# This OWNERS file is here since changes in the build/slave/ directory that
+# introduce bugs can cause all slaves everywhere to fail to reboot properly.
+# Ideally, only changes to this directory can ever cause all slaves to go
+# offline.  Only this OWNERS file will be needed to keep ensure bad changes
+# don't get landed, knocking out the bots.
+
+cmp@chromium.org
+cmp@google.com
+maruel@chromium.org
+maruel@google.com
+nsylvain@chromium.org
+nsylvain@google.com

@@ -1,0 +1,25 @@
+Current Status as of Oct 2, 2012
+
+
+Upstream cherry-picks:
+3c2101f Shared library support for MSVC build.
+8993d03 mp3demux: Rewrite xing TOC based seeking
+a9dbb83 mp3dec: propagate error code correctly.
+67c5aee mpegaudiodec: Fix buffer handling on random access
+
+Current patches:
+
+ugly/
+01_enable_checked_bitstream.patch
+  dalecurtis: Removes "#define UNCHECKED_BITSTREAM_READER 1" from all codecs
+  defining it. In Chromium, all codecs should use the safe bitstream reader.
+
+02_compile_with_disabled_features.patch
+  dalecurtis: Add CONFIG_* checks to compile out code which we don't use which
+  might be a security risk.  Discuss with cevans before removing.  Upstream does
+  not want this patch.
+
+07_remove_av_gettime_symlink.patch
+  dalecurtis: In order to preserve ABI compatibility after av_gettime() was
+  moved inside the FFmpeg code base, they added a "symbolic link" version which
+  our build chain doesn't like.  Remove it until the next major version bump.

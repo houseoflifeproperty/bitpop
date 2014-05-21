@@ -1,0 +1,12 @@
+#!/bin/bash
+
+SCRIPT_DIR=$(cd $(dirname $0) ; pwd)
+
+# Invoke gsutil thru command wrapper for retry and logging.
+$SCRIPT_DIR/../command_wrapper/bin/command_wrapper.py -- \
+    $SCRIPT_DIR/../../third_party/gsutil/gsutil "$@"
+
+# HACK(nsylvain): Delete all the .pyc file in boto.
+rc=$?
+find $SCRIPT_DIR/../../third_party/gsutil/boto -name '*.pyc' -delete
+exit $rc

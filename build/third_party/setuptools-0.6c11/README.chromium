@@ -1,0 +1,6 @@
+URL: http://pypi.python.org/pypi/setuptools
+Sources: http://pypi.python.org/pypi/setuptools#files
+Version: 0.6c11
+License file: PKG-INFO or http://www.opensource.org/licenses/Python-2.0
+
+This is needed for the zope dependency required when master.cfg is executed.

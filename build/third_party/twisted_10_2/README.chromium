@@ -1,0 +1,39 @@
+URL: http://twistedmatrix.com/trac/
+Sources: http://twistedmatrix.com/trac/wiki/Downloads
+Version: 10.2.0
+License file: LICENSE
+
+This version of Twisted is part of the Chromium third_party library,
+and has diverged slightly from the initial 10.2.0 release. Below are
+the full diffs.
+
+=======
+
+--- a/third_party/twisted_10_2/twisted/internet/process.py
++++ b/third_party/twisted_10_2/twisted/internet/process.py
+@@ -890,22 +890,9 @@ class PTYProcess(abstract.FileDescriptor, _BaseProcess):
+         Setup child process after fork() but before exec().
+         """
+         os.close(masterfd)
+-        if hasattr(termios, 'TIOCNOTTY'):
+-            try:
+-                fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+-            except OSError:
+-                pass
+-            else:
+-                try:
+-                    fcntl.ioctl(fd, termios.TIOCNOTTY, '')
+-                except:
+-                    pass
+-                os.close(fd)
+-
+         os.setsid()
+ 
+-        if hasattr(termios, 'TIOCSCTTY'):
+-            fcntl.ioctl(slavefd, termios.TIOCSCTTY, '')
++        fcntl.ioctl(slavefd, termios.TIOCSCTTY, '')
+ 
+         for fd in range(3):
+             if fd != slavefd:
+
+=======

@@ -1,0 +1,276 @@
+/*
+ * Copyright (C) 2012 Google Inc. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are
+ * met:
+ *
+ *     * Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above
+ * copyright notice, this list of conditions and the following disclaimer
+ * in the documentation and/or other materials provided with the
+ * distribution.
+ *     * Neither the name of Google Inc. nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+body {
+    -webkit-user-select: none;
+    background-color: white;
+    font: -webkit-control;
+    margin: 0;
+    overflow: hidden;
+}
+
+.no-focus-ring :focus {
+    outline: none;
+}
+
+.calendar-picker {
+    border: 1px solid #bfbfbf;
+    border-radius: 2px;
+    position: absolute;
+    padding: 10px;
+    background-color: white;
+    white-space: nowrap;
+    width: 500px;
+}
+
+.year-month-area {
+}
+
+.year-month-upper {
+    /* display:-webkit-box; is added in the JS code. */
+}
+
+.year-selector {
+    text-align: right;
+    width: 6em;
+}
+
+.month-selector-box {
+    display: inline-block;
+    text-align: center;
+    -webkit-box-flex: 2;
+}
+
+.month-selector {
+    background-color: white;
+    cursor: pointer;
+    display: inline-block;
+    padding: 4px 6px 4px 6px;
+}
+
+.month-selector svg {
+    margin: 0 6px 2px 6px;
+}
+
+.month-selector-popup {
+    -webkit-box-sizing: content-box;
+    -webkit-box-shadow:
+        0 0 0 1px rgba(0,0,0,0.1),
+        0 5px 1px 1px rgba(0,0,0,0.1),
+        0 5px 2px 1px rgba(0,0,0,0.1),
+        0 5px 12px 1px rgba(0,0,0,0.5);
+    background: #fff;
+    display: none;
+    max-height: 10.8em;
+    overflow-x: hidden;
+    overflow-y: auto;
+    position: absolute;
+    white-space: nowrap;
+}
+
+.month-selector-popup-contents {
+    display: table;
+    text-align: left;
+    border: 1px solid #bfbfbf;
+    margin: -1px 0 0 -1px;
+}
+
+.month-selector-popup-entry {
+    -webkit-padding-start: 5px;
+    -webkit-padding-end: 5px;
+    cursor: pointer;
+    display; table-row;
+    line-height: 1.2em;
+}
+
+.selected-month-year {
+    background-color: highlight;
+    color: highlighttext;
+    text-shadow: none;
+}
+
+@media (pointer:coarse) {
+
+    .month-selector-popup {
+        max-height: 150px;
+    }
+
+    .month-selector-popup-entry {
+        line-height: 30px;
+    }
+}
+
+.month-selector-wall {
+    display: none;
+    height: 100%;
+    left: 0px;
+    position: absolute;
+    top: 0px;
+    width: 100%;
+}
+
+.year-month-button-left {
+    display: inline-block;
+}
+
+.year-month-button-left .year-month-button {
+    margin-right: 4px;
+}
+
+.year-month-button-right {
+    display: inline-block;
+}
+
+.year-month-button-right .year-month-button {
+    margin-left: 4px;
+}
+
+.days-area-container {
+    background-color: white;
+    border: 1px solid #bfbfbf;
+    margin-bottom: 8px;
+    margin-top: 10px;
+    overflow: hidden;
+}
+
+.days-area { /* <table> */
+    background-color: white;
+    border-collapse: separate;
+    border-spacing: 0px;
+    font: -webkit-control;
+    /* table-layout:fixed and width:100% are added in the JS code. */
+}
+
+.day-label { /* <th> */
+    -webkit-box-sizing: border-box;
+    background-color: #f5f5f5;
+    font-weight: normal;
+    text-align: center;
+    border-bottom: 1px solid #bfbfbf;
+    height: 2.1em;
+}
+
+.day { /* <td> */
+    padding: 1px;
+    text-align: center;
+    background-color: white;
+    border: 1px solid white;
+    -webkit-box-sizing: border-box;
+    line-height: 1.4em;
+}
+
+@media (pointer:coarse) {
+    .day {
+        min-width: 28px;
+        line-height: 28px;
+    }
+}
+
+.available {
+    cursor: default;
+    background-color: white;
+    border: 1px solid white;
+    -webkit-transition: all 0.2s ease;
+}
+
+.not-this-month {
+    color: graytext;
+    font-weight: 400;
+    text-shadow: none;
+}
+
+.available.day-selected {
+    background-color: highlight;
+    color: highlighttext;
+    text-shadow: none;
+}
+
+.unavailable {
+    cursor: default;
+    color: graytext;
+    background-color: #eee;
+    border: 1px solid #eee;
+    -webkit-transition: border-color 0.2s ease;
+}
+
+.unavailable.day-selected {
+    border: 1px solid highlight;
+}
+
+.cancel-button {
+    float: right;
+}
+
+.preparing .available,
+.preparing .unavailable {
+    -webkit-transition: none;
+}
+
+.week-mode .day,
+.month-mode .day {
+    -webkit-transition: none;
+    border: none;
+    padding: 2px;
+}
+
+.week-mode .unavailable.day-selected {
+    padding: 1px 2px;
+    border-top: 1px solid highlight;
+    border-bottom: 1px solid highlight;
+}
+
+.week-mode .unavailable.day-selected.monday {
+    padding-left: 1px;
+    border-left: 1px solid highlight;
+}
+
+.week-mode .unavailable.day-selected.sunday {
+    padding-right: 1px;
+    border-right: 1px solid highlight;
+}
+
+.week-mode .week-column.unavailable.day-selected {
+  padding: 1px;
+  border: 1px solid highlight;
+}
+
+.week-column {
+    display: none;
+}
+
+.week-mode .week-column {
+    display: table-cell;
+    border-right: 1px solid #999;
+    padding-right: 1px;
+}
+
+.today-clear-area .today-button {
+    margin-right: 8px;
+}

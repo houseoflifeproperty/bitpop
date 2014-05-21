@@ -1,0 +1,151 @@
+#!/bin/bash
+
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+force_branch=no
+quiet=no
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --force-branch)
+      force_branch=yes
+      ;;
+    -q|--quiet)
+      quiet=yes
+      ;;
+    *)
+      echo "Unknown option: $1"
+      ;;
+  esac
+  shift
+done
+
+svn_lkgr=`curl -s http://chromium-status.appspot.com/lkgr`
+if [ $? != 0 -o -z "$svn_lkgr" ]; then
+  echo 'Could not get svn lkgr from chromium-status.appspot.com/lkgr'
+  exit 1
+fi
+
+# Run a trivial git-svn command to force it to update the revision cache
+# (which causes spew that might otherwise confuse the next command).
+git svn info > /dev/null
+if [ $? != 0 ]; then
+  cat <<EOF 1>&2
+Could not run a trivial git-svn command.  You probably need to set up your
+working directory for git-svn, by following these instructions:
+
+http://code.google.com/p/chromium/wiki/UsingNewGit#Initial_checkout
+EOF
+  exit 1
+fi
+
+git_lkgr=`git svn find-rev r${svn_lkgr}`
+if [ $? != 0 -o -z "$git_lkgr" ]; then
+  cat <<EOF 1>&2
+Could not map svn revision ${svn_lkgr} to a git commit.
+You may need to `git fetch` and try again.
+EOF
+  exit 1
+fi
+
+set -o pipefail
+closest_commit=`git rev-list --ancestry-path \
+    --grep='SVN changes up to revision [0-9]*' \
+    ${git_lkgr}..refs/remotes/origin/master | tail -1`
+if [ $? != 0 -o -z "$closest_commit" ]; then
+  cat <<EOF 1>&2
+Could not find a blessed git commit (with accurate .DEPS.git and submodules)
+after svn lkgr revision $svn_lkgr.
+EOF
+  exit 1
+fi
+
+closest_svn_commit=`git rev-list -n 1 ${closest_commit}^1`
+if [ $? != 0 -o -z "$closest_svn_commit" ]; then
+  cat <<EOF 1>&2
+I am thoroughly confused.  Please file a bug report at http://new.crbug.com.
+EOF
+  exit 1
+fi
+
+# Pick a name for the new branch.  Use `git rev-parse` to make sure the branch
+# doesn't already exist; if it does, iterate an integer suffix to uniquify it.
+lkgr_branch="git_lkgr_r${svn_lkgr}"
+digit=1
+git rev-parse --verify -q "${lkgr_branch}" >/dev/null
+while [ $? -eq 0 ]; do
+  lkgr_branch="git_lkgr_r${svn_lkgr}_${digit}"
+  digit=`expr $digit + 1`
+  git rev-parse --verify -q "${lkgr_branch}" >/dev/null
+done
+
+if [ "${closest_svn_commit}" = "${git_lkgr}" ]; then
+  echo "${closest_commit}"
+  if [ "$force_branch" = "yes" ]; then
+    git checkout -b "${lkgr_branch}" "${closest_commit}"
+  fi
+  exit 0
+elif [ "${quiet}" = "yes" ]; then
+  exit 1
+elif [ "${force_branch}" = "no" ]; then
+  cat <<EOF
+There is no master commit which corresponds exactly to lkgr.
+The closest commit is ${closest_commit}.
+EOF
+  read -n 1 -p 'Would you like to create a new branch based on lkgr? (y/N) '
+  echo
+  if [ "x$REPLY" != "xy" -a "x$REPLY" != "xY" ]; then
+    exit 0
+  fi
+fi
+
+current_head=`git branch | grep '^\*' | cut -c3-`
+if [ "${current_head}" = "(no branch)" ]; then
+  current_head=`git rev-parse HEAD`
+fi
+
+git checkout --detach "${git_lkgr}" &&
+python tools/deps2git/deps2git.py -d DEPS -o .DEPS.git -w .. &&
+git add .DEPS.git &&
+python tools/deps2git/deps2submodules.py .DEPS.git &&
+git commit -m "SVN changes up to revision $svn_lkgr" &&
+git checkout -b "${lkgr_branch}" HEAD
+
+if [ $? != 0 ]; then
+  cat <<EOF
+
+--------------------------------------------------------------------------------
+Something went wrong!  Restoring your previous state by checking out
+$current_head
+
+Please file a bug report at http://new.crbug.com.
+--------------------------------------------------------------------------------
+
+EOF
+  git checkout --force $current_head
+  exit 1
+fi
+
+cat <<EOF
+
+--------------------------------------------------------------------------------
+The new branch "$lkgr_branch" was branched from this commit:
+
+$git_lkgr
+
+... which maps to the svn lkgr commit r${svn_lkgr}.  The new branch
+has one additional commit, to bring .DEPS.git, .gitmodules, and the
+invisible git submodule files up to date with DEPS.
+
+To create a working branch, do this:
+
+\$ git branch --track my_new_branch $lkgr_branch
+
+'git-cl upload' will do the right thing, i.e., it will cherry-pick all
+your changes from my_new_branch, but *not* the .DEPS.git+.gitmodules+submodules
+commit on $lkgr_branch.
+--------------------------------------------------------------------------------
+
+EOF

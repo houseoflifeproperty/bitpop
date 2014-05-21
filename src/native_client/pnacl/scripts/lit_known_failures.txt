@@ -1,0 +1,36 @@
+# This file contains known failures in the LLVM regression tests for PNaCl.
+MC/ARM/arm_instructions.s
+
+# Failures only on windows
+SemaObjC/method-def-2.m win
+Parser/char-literal-printing.c win
+SemaCXX/new-delete-0x.cpp win
+Modules/import-decl.cpp win
+SemaObjC/static-ivar-ref-1.m win
+Parser/objc-type-printing.m win
+PCH/chain-decls.c win
+PCH/objc_container.m win
+Parser/function-decls.c win
+PCH/objc_literals.mm win
+SemaTemplate/template-id-printing.cpp win
+PCH/pch-dir.c win
+PCH/types.c win
+Coverage/ast-printing.m win
+Coverage/ast-printing.c win
+Coverage/ast-printing.cpp win
+PCH/objc_literals.m win
+Parser/objc-alias-printing.m win
+PCH/multiple_decls.c win
+PCH/chain-friend-instantiation.cpp win
+CXX/class.derived/class.virtual/p12.cpp win
+Modules/lookup.m win
+Modules/lookup.cpp win
+PCH/cxx11-lambdas.mm win
+SemaCXX/ast-print.cpp win
+Analysis/Profiling/load-branch-weights-switches.ll win
+Tooling/clang-check-ast-dump.cpp win
+Analysis/Profiling/load-branch-weights-loops.ll win
+Analysis/Profiling/load-branch-weights-ifs.ll win
+Index/code-completion-skip-bodies.cpp win
+CodeGen/X86/2012-07-15-broadcastfold.ll win
+Sema/ast-print.c win

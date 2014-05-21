@@ -1,0 +1,38 @@
+/*
+ * Copyright (c) 2012 The Native Client Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+/*
+ * NaCl Simple/secure ELF loader (NaCl SEL).
+ */
+
+/*
+ * Trampoline to transfer control from native client module to
+ * sel_ldr's NaClSyscallSeg residing in the same address space
+ */
+
+#include "native_client/src/trusted/service_runtime/nacl_config.h"
+
+        .text
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaCl_trampoline_seg_code):
+
+        lcall   $0xcafe, $0xdeadbeef  /* orig-cs, thunk */
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaCl_tramp_cseg_patch):
+        hlt
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaCl_trampoline_seg_end):
+
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaCl_text_prot):
+        hlt
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaCl_text_prot_end):
+
+        .text
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClPcrelThunk):
+        movl    $0xdeadbeef, %eax  /* known okay ds */
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClPcrelThunk_dseg_patch):
+        mov     %ax, %ds  /* disable data sandbox for this thread */
+        movl    $0xdeadbeef, %ecx  /* nacl_user */
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClPcrelThunk_globals_patch):
+        jmp     IDENTIFIER(NaClSyscallSeg) /* PCREL patch */
+DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClPcrelThunk_end):

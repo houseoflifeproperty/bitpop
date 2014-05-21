@@ -1,0 +1,12 @@
+deps = {
+  "depot_tools": "/trunk/tools/depot_tools",
+}
+
+hooks = [
+  {
+    "pattern": ".",
+    "action": [
+      "python", "commit-queue/get_appengine.py"
+    ],
+  },
+]

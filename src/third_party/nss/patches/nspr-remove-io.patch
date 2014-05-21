@@ -1,0 +1,26 @@
+Index: mozilla/nsprpub/pr/include/md/_win95.h
+===================================================================
+--- mozilla/nsprpub/pr/include/md/_win95.h	(revision 80735)
++++ mozilla/nsprpub/pr/include/md/_win95.h	(working copy)
+@@ -64,8 +64,6 @@
+ 
+ #define HAVE_DLL
+ #undef  HAVE_THREAD_AFFINITY
+-#define _PR_HAVE_GETADDRINFO
+-#define _PR_INET6_PROBE
+ #ifndef _PR_INET6
+ #define AF_INET6 23
+ /* newer ws2tcpip.h provides these */
+Index: mozilla/nsprpub/pr/src/io/prio.c
+===================================================================
+--- mozilla/nsprpub/pr/src/io/prio.c	(revision 80735)
++++ mozilla/nsprpub/pr/src/io/prio.c	(working copy)
+@@ -90,8 +90,6 @@
+     _PR_MD_INIT_FD_INHERITABLE(_pr_stdin, PR_TRUE);
+     _PR_MD_INIT_FD_INHERITABLE(_pr_stdout, PR_TRUE);
+     _PR_MD_INIT_FD_INHERITABLE(_pr_stderr, PR_TRUE);
+-
+-    _PR_MD_INIT_IO();
+ }
+ 
+ void _PR_CleanupIO(void)

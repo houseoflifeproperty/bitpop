@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+  <!--  Copyright 2011 Google Inc. All Rights Reserved. -->
+  <!--  Test application for Android Client API and implementation. -->
+  <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+      package="com.google.ipc.invalidation.examples.android2" android:versionName="2.3.0">
+
+    <!-- Permissions for GCM. -->
+    <permission android:name="com.google.ipc.invalidation.examples.android2.permission.C2D_MESSAGE" android:protectionLevel="signature" />
+    <!-- App receives GCM messages. -->
+    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+    <!-- GCM connects to Google Services. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- GCM requires a Google account. -->
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    <uses-permission android:name="android.permission.USE_CREDENTIALS" />
+    <!-- Keeps the processor from sleeping when a message is received. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- GCM requires C2DM permissions -->
+    <uses-permission android:name="com.google.ipc.invalidation.examples.android2.permission.C2D_MESSAGE"/>
+
+    <application>
+      <!-- Configure the listener class for the application -->
+      <meta-data android:name="ipc.invalidation.ticl.listener_service_class"
+          android:value="com.google.ipc.invalidation.examples.android2.ExampleListener"/>
+
+      <!-- Example activity -->
+      <activity android:name=".MainActivity">
+        <intent-filter>
+          <action android:name="android.intent.action.MAIN"/>
+          <category android:name="android.intent.category.LAUNCHER"/>
+        </intent-filter>
+      </activity>
+
+      <!-- Receiver for scheduler alarms. Must be exported for the AlarmManager to call it. -->
+      <receiver android:exported="true"
+          android:name="com.google.ipc.invalidation.external.client.contrib.AndroidListener$AlarmReceiver"/>
+
+      <!-- Ticl listener. -->
+      <service android:exported="false" android:name=".ExampleListener">
+        <intent-filter>
+          <action android:name="com.google.ipc.invalidation.AUTH_TOKEN_REQUEST"/>
+        </intent-filter>
+      </service>
+
+      <!-- **************************** BEGIN BOILERPLATE -->
+      <!-- Ticl manager service. -->
+      <service android:exported="false"
+          android:name="com.google.ipc.invalidation.ticl.android2.TiclService"/>
+
+      <!-- Ticl sender. -->
+      <service android:exported="false"
+          android:name="com.google.ipc.invalidation.ticl.android2.channel.AndroidMessageSenderService"/>
+
+      <!-- Receiver for scheduler alarms. Must be exported for the AlarmManager to call it. -->
+      <receiver android:exported="true"
+          android:name="com.google.ipc.invalidation.ticl.android2.AndroidInternalScheduler$AlarmReceiver"/>
+
+      <!-- GCM Broadcast Receiver -->
+      <receiver android:exported="true"
+          android:name="com.google.ipc.invalidation.external.client.contrib.MultiplexingGcmListener$GCMReceiver"
+          android:permission="com.google.android.c2dm.permission.SEND">
+        <intent-filter>
+          <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+          <action android:name="com.google.android.c2dm.intent.REGISTRATION" />
+          <category android:name="com.google.ipc.invalidation.ticl.android2" />
+        </intent-filter>
+      </receiver>
+
+      <!-- Normally, Chrome/Android would instantiate the multiplexer service for us. -->
+      <!-- GCM multiplexer -->
+      <service android:exported="true"
+          android:name="com.google.ipc.invalidation.external.client.contrib.MultiplexingGcmListener"/>
+
+      <!--  multiplexed GCM receiver -->
+      <service android:exported="false"
+          android:name="com.google.ipc.invalidation.ticl.android2.channel.AndroidMessageReceiverService"
+          android:enabled="true"/>
+      <receiver android:exported="false"
+          android:name="com.google.ipc.invalidation.ticl.android2.channel.AndroidMessageReceiverService$Receiver">
+        <intent-filter>
+          <action android:name="com.google.ipc.invalidation.gcmmplex.EVENT" />
+        </intent-filter>
+      </receiver>
+      <!-- **************************** END BOILERPLATE -->
+    </application>
+  </manifest>

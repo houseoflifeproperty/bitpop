@@ -1,0 +1,332 @@
+// libjingle
+// Copyright 2010 Google Inc.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+//  1. Redistributions of source code must retain the above copyright notice,
+//     this list of conditions and the following disclaimer.
+//  2. Redistributions in binary form must reproduce the above copyright notice,
+//     this list of conditions and the following disclaimer in the documentation
+//     and/or other materials provided with the distribution.
+//  3. The name of the author may not be used to endorse or promote products
+//     derived from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+// EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+// OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+// WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+// OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+// ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+// Implementation file of class VideoCapturer.
+
+#include "talk/media/base/videocapturer.h"
+
+#include <algorithm>
+
+#include "talk/base/logging.h"
+#include "talk/media/base/videoprocessor.h"
+
+#if defined(HAVE_WEBRTC_VIDEO)
+#include "talk/media/webrtc/webrtcvideoframe.h"
+#endif  // HAVE_WEBRTC_VIDEO
+
+
+namespace cricket {
+
+static const int64 kMaxDistance = ~(static_cast<int64>(1) << 63);
+static const int64 kMinDesirableFps = static_cast<int64>(14);
+static const int kYU12Penalty = 16;  // Needs to be higher than MJPG index.
+typedef talk_base::TypedMessageData<CaptureState> StateChangeParams;
+
+/////////////////////////////////////////////////////////////////////
+// Implementation of struct CapturedFrame
+/////////////////////////////////////////////////////////////////////
+CapturedFrame::CapturedFrame()
+    : width(0),
+      height(0),
+      fourcc(0),
+      pixel_width(0),
+      pixel_height(0),
+      elapsed_time(0),
+      time_stamp(0),
+      data_size(0),
+      rotation(0),
+      data(NULL) {
+}
+
+// TODO(fbarchard): Remove this function once lmimediaengine stops using it.
+bool CapturedFrame::GetDataSize(uint32* size) const {
+  if (!size || data_size == CapturedFrame::kUnknownDataSize) {
+    return false;
+  }
+  *size = data_size;
+  return true;
+}
+
+/////////////////////////////////////////////////////////////////////
+// Implementation of class VideoCapturer
+/////////////////////////////////////////////////////////////////////
+VideoCapturer::VideoCapturer() : thread_(talk_base::Thread::Current()) {
+  Construct();
+}
+
+VideoCapturer::VideoCapturer(talk_base::Thread* thread)
+    : thread_(thread) {
+  Construct();
+}
+
+void VideoCapturer::Construct() {
+  ClearAspectRatio();
+  capture_state_ = CS_STOPPED;
+  SignalFrameCaptured.connect(this, &VideoCapturer::OnFrameCaptured);
+}
+
+bool VideoCapturer::StartCapturing(const VideoFormat& capture_format) {
+  CaptureState result = Start(capture_format);
+  const bool success = (result == CS_RUNNING) || (result == CS_STARTING);
+  if (!success) {
+    return false;
+  }
+  if (result == CS_RUNNING) {
+    SetCaptureState(result);
+  }
+  return true;
+}
+
+void VideoCapturer::UpdateAspectRatio(int ratio_w, int ratio_h) {
+  ratio_w_ = ratio_w;
+  ratio_h_ = ratio_h;
+}
+
+void VideoCapturer::ClearAspectRatio() {
+  ratio_w_ = 0;
+  ratio_h_ = 0;
+}
+
+void VideoCapturer::SetSupportedFormats(
+    const std::vector<VideoFormat>& formats) {
+  if (!supported_formats_) {
+    supported_formats_.reset(new std::vector<VideoFormat>);
+  }
+  *supported_formats_ = formats;
+}
+
+bool VideoCapturer::GetBestCaptureFormat(const VideoFormat& format,
+                                         VideoFormat* best_format) {
+  if (!supported_formats_) {
+    return false;
+  }
+  LOG(LS_INFO) << " Capture Requested " << format.ToString();
+  int64 best_distance = kMaxDistance;
+  std::vector<VideoFormat>::const_iterator best = supported_formats_->end();
+  std::vector<VideoFormat>::const_iterator i;
+  for (i = supported_formats_->begin(); i != supported_formats_->end(); ++i) {
+    int64 distance = GetFormatDistance(format, *i);
+    // TODO(fbarchard): Reduce to LS_VERBOSE if/when camera capture is
+    // relatively bug free.
+    LOG(LS_INFO) << " Supported " << i->ToString()
+                 << " distance " << distance;
+    if (distance < best_distance) {
+      best_distance = distance;
+      best = i;
+    }
+  }
+  if (supported_formats_->end() == best) {
+    LOG(LS_ERROR) << " No acceptable camera format found";
+    return false;
+  }
+
+  if (best_format) {
+    best_format->width = best->width;
+    best_format->height = best->height;
+    best_format->fourcc = best->fourcc;
+    best_format->interval = talk_base::_max(format.interval, best->interval);
+    LOG(LS_INFO) << " Best " << best_format->ToString()
+                 << " distance " << best_distance;
+  }
+  return true;
+}
+
+void VideoCapturer::AddVideoProcessor(VideoProcessor* video_processor) {
+  talk_base::CritScope cs(&crit_);
+  video_processors_.push_back(video_processor);
+}
+
+bool VideoCapturer::RemoveVideoProcessor(VideoProcessor* video_processor) {
+  talk_base::CritScope cs(&crit_);
+  VideoProcessors::iterator found = std::find(video_processors_.begin(),
+                                              video_processors_.end(),
+                                              video_processor);
+  if (found == video_processors_.end()) {
+    return false;
+  }
+  video_processors_.erase(found);
+  return true;
+}
+
+void VideoCapturer::GetDesiredResolution(const CapturedFrame* frame,
+                                         int* cropped_width,
+                                         int* cropped_height) {
+  *cropped_width = frame->width;
+  *cropped_height = frame->height;
+  if ((ratio_w_ == 0) || (ratio_h_ == 0)) {
+    return;
+  }
+  ComputeCrop(ratio_w_, ratio_h_,
+              frame->width, abs(frame->height),
+              frame->pixel_width, frame->pixel_height,
+              frame->rotation, cropped_width, cropped_height);
+}
+
+void VideoCapturer::OnFrameCaptured(VideoCapturer*,
+                                    const CapturedFrame* captured_frame) {
+  if (SignalVideoFrame.is_empty()) {
+    return;
+  }
+#if defined(HAVE_WEBRTC_VIDEO)
+#define VIDEO_FRAME_NAME WebRtcVideoFrame
+#endif
+#if defined(VIDEO_FRAME_NAME)
+  int desired_width = 0;
+  int desired_height = 0;
+  GetDesiredResolution(captured_frame, &desired_width, &desired_height);
+  VIDEO_FRAME_NAME i420_frame;
+  if (!i420_frame.Init(captured_frame, desired_width, desired_height)) {
+    LOG(LS_ERROR) << "Couldn't convert to I420! "
+                  << desired_width << " x " << desired_height;
+    return;
+  }
+  if (!ApplyProcessors(&i420_frame)) {
+    // Processor dropped the frame.
+    return;
+  }
+  SignalVideoFrame(this, &i420_frame);
+#endif  // VIDEO_FRAME_NAME
+}
+
+void VideoCapturer::SetCaptureState(CaptureState state) {
+  if (state == capture_state_) {
+    // Don't trigger a state changed callback if the state hasn't changed.
+    return;
+  }
+  StateChangeParams* state_params = new StateChangeParams(state);
+  capture_state_ = state;
+  thread_->Post(this, 0, state_params);
+}
+
+void VideoCapturer::OnMessage(talk_base::Message* message) {
+  talk_base::scoped_ptr<StateChangeParams> p(
+      static_cast<StateChangeParams*> (message->pdata));
+  SignalStateChange(this, p->data());
+}
+
+// Get the distance between the supported and desired formats.
+// Prioritization is done according to this algorithm:
+// 1) Width closeness. If not same, we prefer wider.
+// 2) Height closeness. If not same, we prefer higher.
+// 3) Framerate closeness. If not same, we prefer faster.
+// 4) Compression. If desired format has a specific fourcc, we need exact match;
+//                otherwise, we use preference.
+int64 VideoCapturer::GetFormatDistance(const VideoFormat& desired,
+                                       const VideoFormat& supported) {
+  int64 distance = kMaxDistance;
+
+  // Check fourcc.
+  uint32 supported_fourcc = CanonicalFourCC(supported.fourcc);
+  int64 delta_fourcc = kMaxDistance;
+  if (FOURCC_ANY == desired.fourcc) {
+    // Any fourcc is OK for the desired. Use preference to find best fourcc.
+    std::vector<uint32> preferred_fourccs;
+    if (!GetPreferredFourccs(&preferred_fourccs)) {
+      return distance;
+    }
+
+    for (size_t i = 0; i < preferred_fourccs.size(); ++i) {
+      if (supported_fourcc == CanonicalFourCC(preferred_fourccs[i])) {
+        delta_fourcc = i;
+#ifdef LINUX
+        // For HD avoid YU12 which is a software conversion and has 2 bugs
+        // b/7326348 b/6960899.  Reenable when fixed.
+        if (supported.height >= 720 && (supported_fourcc == FOURCC_YU12 ||
+            supported_fourcc == FOURCC_YV12)) {
+          delta_fourcc += kYU12Penalty;
+        }
+#endif
+        break;
+      }
+    }
+  } else if (supported_fourcc == CanonicalFourCC(desired.fourcc)) {
+    delta_fourcc = 0;  // Need exact match.
+  }
+
+  if (kMaxDistance == delta_fourcc) {
+    // Failed to match fourcc.
+    return distance;
+  }
+
+  // Check resolution and fps.
+  int desired_width = desired.width;
+  int desired_height = desired.height;
+  int64 delta_w = supported.width - desired_width;
+  int64 supported_fps = VideoFormat::IntervalToFps(supported.interval);
+  int64 delta_fps = supported_fps -
+      VideoFormat::IntervalToFps(desired.interval);
+  // Check height of supported height compared to height we would like it to be.
+  int64 aspect_h = desired_width ?
+      supported.width * desired_height / desired_width : desired_height;
+  int64 delta_h = supported.height - aspect_h;
+
+  distance = 0;
+  // Set high penalty if the supported format is lower than the desired format.
+  // 3x means we would prefer down to down to 3/4, than up to double.
+  // But we'd prefer up to double than down to 1/2.  This is conservative,
+  // strongly avoiding going down in resolution, similar to
+  // the old method, but not completely ruling it out in extreme situations.
+  // It also ignores framerate, which is often very low at high resolutions.
+  // TODO(fbarchard): Improve logic to use weighted factors.
+  static const int kDownPenalty = -3;
+  if (delta_w < 0) {
+    delta_w = delta_w * kDownPenalty;
+  }
+  if (delta_h < 0) {
+    delta_h = delta_h * kDownPenalty;
+  }
+  if (delta_fps < 0) {
+    // For same resolution, prefer higher framerate but accept lower.
+    // Otherwise prefer higher resolution.
+    delta_fps = -delta_fps;
+    if (supported_fps < kMinDesirableFps) {
+      distance |= static_cast<int64>(1) << 62;
+    } else {
+      distance |= static_cast<int64>(1) << 15;
+    }
+  }
+
+  // 12 bits for width and height and 8 bits for fps and fourcc.
+  distance |= (delta_w << 28) | (delta_h << 16) |
+      (delta_fps << 8) | delta_fourcc;
+
+  return distance;
+}
+
+bool VideoCapturer::ApplyProcessors(VideoFrame* video_frame) {
+  bool drop_frame = false;
+  talk_base::CritScope cs(&crit_);
+  for (VideoProcessors::iterator iter = video_processors_.begin();
+       iter != video_processors_.end();
+       ++iter) {
+    (*iter)->OnFrame(kDummyVideoSsrc, video_frame, &drop_frame);
+    if (drop_frame) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace cricket

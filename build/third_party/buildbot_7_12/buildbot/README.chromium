@@ -1,0 +1,564 @@
+URL: http://buildbot.net/trac
+GIT: git://github.com/nsylvain/buildbot.git in branch "chromium"
+Sources: http://github.com/nsylvain/buildbot/tree/chromium
+Version: 0.7.12
+License: GNU General Public License (GPL) Version 2
+
+This is a forked copy of buildbot v0.7.12 with the modifications living
+in github. To list the local modifications, use:
+  git log nsylvain/chromium ^v0.7.12
+  
+
+The following change has been made to fix issues that are now fixed in
+a newer version of the upstream repository.
+
+--- buildbot/status/web/console.py      (revision 54225)
++++ buildbot/status/web/console.py      (working copy)
+@@ -431,11 +431,8 @@
+                 builds.append(devBuild)
+
+                 # Now break if we have enough builds.
+-                current_revision = self.getChangeForBuild(
+-                    builder.getBuild(-1), revision)
+-                if self.comparator.isRevisionEarlier(
+-                    devBuild, current_revision):
+-                    break
++                if int(got_rev) < int(revision):
++                    break;
+
+
+Then made the following embelishment to allow the old behavior for
+time based comparators.
+
+--- third_party/buildbot_7_12/buildbot/status/web/console.py    (revision 68693)
++++ third_party/buildbot_7_12/buildbot/status/web/console.py    (working copy)
+@@ -450,8 +450,15 @@
+                 builds.append(devBuild)
+
+                 # Now break if we have enough builds.
+-                if int(got_rev) < int(revision):
+-                    break;
++                if self.comparator.getSortingKey() == "when":
++                    current_revision = self.getChangeForBuild(
++                        builder.getBuild(-1), revision)
++                    if self.comparator.isRevisionEarlier(
++                        devBuild, current_revision):
++                        break
++                else:
++                    if int(got_rev) < int(revision):
++                        break;
+
+
+             build = build.getPreviousBuild()
+
+
+Ignore invalid utf-8 strings in logs.
+
+--- third_party/buildbot_7_12/buildbot/status/web/console.py
++++ third_party/buildbot_7_12/buildbot/status/web/console.py
+@@ -891,8 +891,11 @@ class ConsoleStatusResource(HtmlResource):
+             subs["date"] = revision.date
+             comment = revision.comments or ""
+             subs["comments"] = comment.replace('<', '&lt;').replace('>', '&gt;')
+-            comment_quoted = urllib.quote(subs["comments"].encode("utf-8"))
+-
++            try:
++                comment_quoted = urllib.quote(
++                    subs["comments"].decode("utf-8", "ignore").encode(
++                        "ascii", "xmlcharrefreplace"))
++            except UnicodeEncodeError:
++                # TODO(maruel): Figure out what's happening.
++                comment_quoted = urllib.quote(subs["comments"].encode("utf-8"))
+             json += ( "{'revision': '%s', 'date': '%s', 'comments': '%s',"
+                       "'results' : " ) % (subs["revision"], subs["date"],
+                                           comment_quoted)
+
+
+The following patch was ported back from upstream adding log names and URLs to
+the JSON output.
+
+--- third_party/buildbot_7_12/buildbot/status/builder.py	(revision 70505)
++++ third_party/buildbot_7_12/buildbot/status/builder.py	(working copy)
+@@ -1132,9 +1132,9 @@
+         result['eta'] = self.getETA()
+         result['urls'] = self.getURLs()
+         result['step_number'] = self.step_number
+-        # TODO(maruel): Move that to a sub-url or just publish the log_url
+-        # instead.
+-        #result['logs'] = self.getLogs()
++        result['logs'] = [[l.getName(),
++            self.build.builder.status.getURLForThing(l)]
++                for l in self.getLogs()]
+         return result
+ 
+ 
+@@ -1565,8 +1565,8 @@
+         result['slave'] = self.getSlavename()
+         # TODO(maruel): Add.
+         #result['test_results'] = self.getTestResults()
+-        # TODO(maruel): Include the url? It's too heavy otherwise.
+-        #result['logs'] = self.getLogs()
++        result['logs'] = [[l.getName(),
++            self.builder.status.getURLForThing(l)] for l in self.getLogs()]
+         result['eta'] = self.getETA()
+         result['steps'] = [bss.asDict() for bss in self.steps]
+         if self.getCurrentStep():
+
+
+The following patch disables rss and atom output.
+
+--- a/third_party/buildbot_7_12/buildbot/status/web/baseweb.py
++++ b/third_party/buildbot_7_12/buildbot/status/web/baseweb.py
+@@ -594,8 +594,9 @@ class WebStatus(service.MultiService):
+             root.putChild(name, child_resource)
+
+         status = self.getStatus()
+-        root.putChild("rss", Rss20StatusResource(status))
+-        root.putChild("atom", Atom10StatusResource(status))
++        # Disabled from Chromium.
++        # root.putChild("rss", Rss20StatusResource(status))
++        # root.putChild("atom", Atom10StatusResource(status))
+         root.putChild("json", JsonStatusResource(status))
+
+         self.site.resource = root
+
+
+Fixes c.number is None
+--- a/master/buildbot/status/web/status_json.py
++++ b/master/buildbot/status/web/status_json.py
+@@ -547,15 +547,13 @@ class ChangesJsonResource(JsonResource):
+     def __init__(self, status, changes):
+         JsonResource.__init__(self, status)
+         for c in changes:
+-            # TODO(maruel): Problem with multiple changes with the same number.
+-            # Probably try server hack specific so we could fix it on this side
+-            # instead. But there is still the problem with multiple pollers from
+-            # different repo where the numbers could clash.
+-            number = str(c.number)
+-            while number in self.children:
+-                # TODO(maruel): Do something better?
+-                number = str(int(c.number)+1)
+-            self.putChild(number, ChangeJsonResource(status, c))
++            # c.number can be None or clash another change if the change was
++            # generated inside buildbot or if using multiple pollers.
++            if c.number is not None and str(c.number) not in self.children:
++                self.putChild(str(c.number), ChangeJsonResource(status, c))
++            else:
++                # Temporary hack since it creates information exposure.
++                self.putChild(str(id(c)), ChangeJsonResource(status, c))
+
+     def asDict(self, request):
+         """Don't throw an exception when there is no child."""
+
+
+Add extra parameters to HttpStatusPush as a very basic authentication mechanism.
+--- a/third_party/buildbot_7_12/buildbot/status/status_push.py
++++ b/third_party/buildbot_7_12/buildbot/status/status_push.py
+@@ -321,7 +321,7 @@ class HttpStatusPush(StatusPush):
+
+     def __init__(self, serverUrl, debug=None, maxMemoryItems=None,
+                  maxDiskItems=None, chunkSize=200, maxHttpRequestSize=2**20,
+-                 **kwargs):
++                 extra_post_params=None, **kwargs):
+         """
+         @serverUrl: Base URL to be used to push events notifications.
+         @maxMemoryItems: Maximum number of items to keep queued in memory.
+@@ -334,6 +334,7 @@ class HttpStatusPush(StatusPush):
+         """
+         # Parameters.
+         self.serverUrl = serverUrl
++        self.extra_post_params = extra_post_params or {}
+         self.debug = debug
+         self.chunkSize = chunkSize
+         self.lastPushWasSuccessful = True
+@@ -371,7 +372,9 @@ class HttpStatusPush(StatusPush):
+                 packets = json.dumps(items, indent=2, sort_keys=True)
+             else:
+                 packets = json.dumps(items, separators=(',',':'))
+-            data = urllib.urlencode({'packets': packets})
++            params = {'packets': packets}
++            params.update(self.extra_post)
++            data = urllib.urlencode(params)
+             if (not self.maxHttpRequestSize or
+                 len(data) < self.maxHttpRequestSize):
+                 return (data, items)
+@@ -389,6 +392,8 @@ class HttpStatusPush(StatusPush):
+     def pushHttp(self):
+         """Do the HTTP POST to the server."""
+         (encoded_packets, items) = self.popChunk()
++        if not self.serverUrl:
++            return
+
+         def Success(result):
+             """Queue up next push."""
+
+
+Add pendingBuilds
+--- a/third_party/buildbot_7_12/buildbot/status/builder.py
++++ b/third_party/buildbot_7_12/buildbot/status/builder.py
+@@ -2171,10 +2171,7 @@ class BuilderStatus(styles.Versioned):
+         result['cachedBuilds'] = cached_builds
+         result['currentBuilds'] = current_builds
+         result['state'] = self.getState()[0]
+-        # BuildRequestStatus doesn't have a number so display the SourceStamp.
+-        result['pendingBuilds'] = [
+-            b.getSourceStamp().asDict() for b in self.getPendingBuilds()
+-        ]
++        result['pendingBuilds'] = len(self.getPendingBuilds())
+         return result
+
+
+diff --git a/third_party/buildbot_7_12/buildbot/status/web/status_json.py b/third_party/buildbot_7_12/buildbot/status/web/status_json.
+index e3aaafe..6c272a6 100644
+--- a/third_party/buildbot_7_12/buildbot/status/web/status_json.py
++++ b/third_party/buildbot_7_12/buildbot/status/web/status_json.py
+@@ -344,6 +344,20 @@ class HelpResource(HtmlResource):
+         return self.text
+
+
++class BuilderPendingBuildsJsonResource(JsonResource):
++    help = """Describe pending builds for a builder.
++"""
++    title = 'Builder'
++
++    def __init__(self, status, builder_status):
++        JsonResource.__init__(self, status)
++        self.builder_status = builder_status
++
++    def asDict(self, request):
++        # buildbot.status.builder.BuilderStatus
++        return [b.asDict() for b in self.builder_status.getPendingBuilds()]
++
++
+ class BuilderJsonResource(JsonResource):
+     help = """Describe a single builder.
+ """
+@@ -355,6 +369,9 @@ class BuilderJsonResource(JsonResource):
+         self.putChild('builds', BuildsJsonResource(status, builder_status))
+         self.putChild('slaves', BuilderSlavesJsonResources(status,
+                                                            builder_status))
++        self.putChild(
++                'pendingBuilds',
++                BuilderPendingBuildsJsonResource(status, builder_status))
+
+     def asDict(self, request):
+         # buildbot.status.builder.BuilderStatus
+
+
+Increase console customization build range:
+
+--- status/web/console.py       (revision 75203)
++++ status/web/console.py       (working copy)
+@@ -971,10 +971,10 @@
+         # Keep only the revisions we care about.
+         # By default we process the last 40 revisions.
+         # If a dev name is passed, we look for the changes by this person in the
+-        # last 80 revisions.
++        # last 160 revisions.
+         numRevs = 40
+         if devName:
+-          numRevs *= 2
++          numRevs *= 4
+         numBuilds = numRevs
+
+
+The following patches add support for ANSI to HTML conversion of logs
+
+Index: status/web/ansi2html.py
+===================================================================
+--- status/web/ansi2html.py	(revision 0)
++++ status/web/ansi2html.py	(revision 0)
+@@ -0,0 +1,161 @@
++# Copyright (c) 2011 The Chromium Authors. All rights reserved.
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import cStringIO
++import re
++
++DEFAULTS = {
++    'color' : 'white',
++    'background-color' : 'black',
++    'font-weight' : 'normal',
++    'text-decoration' : 'none',
++}
++
++
++class Ansi2HTML:
++    """Class for converting text streams with ANSI codes into html"""
++
++    ANSIEscape = '['
++   
++    ANSIAttributes = {
++        0 : ['color:' + DEFAULTS['color'],
++             'font-weight:' + DEFAULTS['font-weight'],
++             'text-decoration:' + DEFAULTS['text-decoration'],
++             'background-color:' + DEFAULTS['background-color']], # reset
++        1 : ['font-weight:bold'],
++        2 : ['font-weight:lighter'],
++        4 : ['text-decoration:underline'],
++        5 : ['text-decoration:blink'],
++        7 : [], # invert attribute?
++        8 : [], # invisible attribute?
++        30 : ['color:black'],
++        31 : ['color:red'],
++        32 : ['color:green'],
++        33 : ['color:yellow'],
++        34 : ['color:blue'],
++        35 : ['color:magenta'],
++        36 : ['color:cyan'],
++        37 : ['color:white'],
++        39 : ['color:' + DEFAULTS['color']],
++        40 : ['background-color:black'],
++        41 : ['background-color:red'],
++        42 : ['background-color:green'],
++        43 : ['background-color:yellow'],
++        44 : ['background-color:blue'],
++        45 : ['background-color:magenta'],
++        46 : ['background-color:cyan'],
++        47 : ['background-color:white'],
++        49 : ['background-color:' + DEFAULTS['background-color']],
++    }
++
++    def __init__(self):
++        self.ctx = {}
++        # Send a 0 code, resetting ctx to defaults.
++        self.attrib('0')
++        # Prepare a regexp recognizing all ANSI codes.
++        code_src = '|'.join(self.ANSICodes)
++        # This captures non-greedy code argument and code itself, both grouped.
++        self.code_re = re.compile("(.*?)(" + code_src + ")")
++
++    def noop(self, arg):
++        """Noop code, for ANSI codes that have no html equivalent."""
++        return ''
++
++    def attrib(self, arg):
++        """Text atribute code"""
++        if arg == '':
++            # Apparently, empty code argument means reset (0).
++            arg = '0'
++        for attr in arg.split(";"):
++            try:
++                for change in self.ANSIAttributes[int(attr)]:
++                    pieces = change.split(":")
++                    self.ctx[pieces[0]] = pieces[1]
++            except KeyError:
++                # Invalid key? Hmmm.
++                return 'color:red">ANSI code not found: ' + \
++                        arg + '<font style="color:' + self.ctx['color']
++        return self.printStyle()
++
++    ANSICodes = { 
++        'H' : noop, # cursor_pos, # ESC[y,xH - Cursor position y,x
++        'A' : noop, # cursor_up, # ESC[nA - Cursor Up n lines
++        'B' : noop, # cursor_down, # ESC[nB - Cursor Down n lines
++        'C' : noop, # cursor_forward, # ESC[nC - Cursor Forward n characters
++        'D' : noop, # cursor_backward, # ESC[nD - Cursor Backward n characters
++        'f' : noop, # cursor_xy, # ESC[y;xf - Cursor pos y,x (infrequent)
++        'R' : noop, # cursor_report, # ESC[y;xR - Cursor position report y,x
++        'n' : noop, # device_status, # ESC[6n - Dev status report (cursor pos)
++        's' : noop, # save_cursor, # ESC[s - Save cursor position
++        'u' : noop, # restore_cursor, # ESC[u - Restore cursor position
++        'J' : noop, # clrscr, # ESC[2J - Erase display
++        'K' : noop, # erase2eol, # ESC[K - Erase to end of line
++        'L' : noop, # insertlines, # ESC[nL - Inserts n blank lines at cursor
++        'M' : noop, # deletelines, # ESC[nM - Deletes n lines including cursor
++        '@' : noop, # insertchars, # ESC[n@ - Inserts n blank chars at cursor
++        'P' : noop, # deletechars, # ESC[nP - Deletes n chars including cursor
++        'y' : noop, # translate, # ESC[n;ny - Output char translate
++        'p' : noop, # key_reassign, #ESC["str"p - Keyboard Key Reassignment
++        'm' : attrib, # ESC[n;n;...nm - Set attributes
++    }
++
++    def printStyle(self, showDefaults=False):
++        """Returns a text representing the style of the current context."""
++        style = ''
++        for attr in DEFAULTS:
++            if self.ctx[attr] != DEFAULTS[attr] or showDefaults:
++                style += attr + ':' + self.ctx[attr] + ';'
++        return style
++
++    def printHtmlHeader(self, title):
++        text = '<html><head><title>%s</title></head>' % title
++	text += '<body bgcolor="%s"><pre>' % DEFAULTS['background-color']
++        return text
++
++    def printHtmlFooter(self):
++        return '</pre></body></html>'
++
++    def printHeader(self):
++        """Envelopes everything into defaults <font> tag and opens a stub."""
++        self.attrib("0") # this means reset to default
++        return '<font style="%s"><font>' % self.printStyle(showDefaults=True)
++
++    def printFooter(self):
++        """Closes both stub and envelope font tags."""
++        return '</font></font>'
++
++    def parseBlock(self, string):
++        """Takes a block of text and transform into html"""
++        output = cStringIO.StringIO()
++        skipfirst = True
++        # Splitting by ANSIEscape turns the line into following elements:
++        # arg,code,text
++        # First two change the context, text is carried.
++        for block in string.split(self.ANSIEscape):
++            if not block:
++                # First block is empty -> the line starts with escape code.
++                skipfirst = False
++                continue
++
++            if skipfirst:
++                # The line doesn't start with escape code -> skip first block.
++                output.write(block)
++                skipfirst = False
++                continue
++
++            match = self.code_re.match(block)
++            if not match:
++                # If there's no match, it is the line end. Don't parse it.
++                output.write(block)
++                continue
++
++            parseFunc = self.ANSICodes[match.group(2)]
++            # Replace ANSI codes with </font><font> sequence
++            output.write('</font><font style="')
++            output.write(parseFunc(self, match.group(1)))
++            output.write('">')
++            # Output the text
++            output.write(block.split(match.group(2),1)[1])
++
++        return output.getvalue()
+
+
+Index: status/web/logs.py
+===================================================================
+--- status/web/logs.py	(revision 95541)
++++ status/web/logs.py	(working copy)
+@@ -9,6 +9,7 @@
+ from buildbot import interfaces
+ from buildbot.status import builder
+ from buildbot.status.web.base import IHTMLLog, HtmlResource
++from buildbot.status.web.ansi2html import Ansi2HTML
+ 
+ 
+ textlog_stylesheet = """
+@@ -59,7 +60,7 @@
+     # it, so we can afford to track the request in the Resource.
+     implements(IHTMLLog)
+ 
+-    asText = False
++    printAs = "html"
+     subscribed = False
+ 
+     def __init__(self, original):
+@@ -67,9 +68,13 @@
+         self.original = original
+ 
+     def getChild(self, path, req):
+-        if path == "text":
+-            self.asText = True
++        if path == "ansi":
++            self.ansiParser = Ansi2HTML()
++
++        if path == "text" or path == "ansi":
++            self.printAs = path
+             return self
++
+         return HtmlResource.getChild(self, path, req)
+ 
+     def htmlHeader(self, request):
+@@ -80,6 +85,8 @@
+         data += "<body vlink=\"#800080\">\n"
+         texturl = request.childLink("text")
+         data += '<a href="%s">(view as text)</a><br />\n' % texturl
++        ansiurl = request.childLink("ansi")
++        data += '<a href="%s">(view as ansi)</a><br />\n' % ansiurl
+         data += "<pre>\n"
+         return data
+ 
+@@ -90,9 +97,12 @@
+             if type >= len(builder.ChunkTypes) or type < 0:
+                 # non-std channel, don't display
+                 continue
+-            if self.asText:
++            if self.printAs == "text":
+                 if type != builder.HEADER:
+                     data += entry
++            elif self.printAs == "ansi":
++                if type != builder.HEADER:
++                    data += self.ansiParser.parseBlock(entry)
+             else:
+                 data += spanfmt % (builder.ChunkTypes[type],
+                                    html.escape(entry))
+@@ -104,7 +114,7 @@
+         return data
+ 
+     def render_HEAD(self, request):
+-        if self.asText:
++        if self.printAs == "text":
+             request.setHeader("content-type", "text/plain")
+         else:
+             request.setHeader("content-type", "text/html")
+@@ -116,13 +126,16 @@
+     def render_GET(self, req):
+         self.req = req
+ 
+-        if self.asText:
++        if self.printAs == "text":
+             req.setHeader("content-type", "text/plain")
+         else:
+             req.setHeader("content-type", "text/html")
+ 
+-        if not self.asText:
++        if self.printAs == "html":
+             req.write(self.htmlHeader(req))
++        if self.printAs == "ansi":
++            req.write(self.ansiParser.printHtmlHeader("Log File Contents"))
++            req.write(self.ansiParser.printHeader())
+ 
+         self.original.subscribeConsumer(ChunkConsumer(req, self))
+         return server.NOT_DONE_YET
+@@ -131,8 +144,11 @@
+         if not self.req:
+             return
+         try:
+-            if not self.asText:
++            if self.printAs == "html":
+                 self.req.write(self.htmlFooter())
++            if self.printAs == "ansi":
++                self.req.write(self.ansiParser.printFooter())
++                self.req.write(self.ansiParser.printHtmlFooter())
+             self.req.finish()
+         except pb.DeadReferenceError:
+             pass
+
+
+
+Fix chrome-bot mis-syncs.
+
+Index: buildbot/changes/svnpoller.py
+===================================================================
+--- buildbot/changes/svnpoller.py
++++ buildbot/changes/svnpoller.py
+@@ -367,6 +367,19 @@ class SVNPoller(base.ChangeSource, util.ComparableMixin):
+                 break
+             new_logentries.append(el)
+         new_logentries.reverse() # return oldest first
++
++        # If the newest commit's author is chrome-bot, skip this commit.  This
++        # is a guard to ensure that we don't poll on our mirror while it could
++        # be mid-sync.  In that case, the author data could be wrong and would
++        # look like it was a commit by chrome-bot@google.com.  A downside: the
++        # chrome-bot account may have a legitimate commit.  This should not
++        # happen generally, so we're okay waiting to see it until there's a
++        # later commit with a non-chrome-bot author.
++        if len(new_logentries) > 0:
++          if new_logentries[-1].getAttribute("author") == 'chrome-bot@google.com':
++            new_logentries.pop(-1)
++            mostRecent = int(logentries[1].getAttribute("revision"))
++
+         return (mostRecent, new_logentries)
+
+     def get_new_logentries(self, logentries):

@@ -1,0 +1,146 @@
+URL: http://twistedmatrix.com/trac/
+Version: 8.1.0
+License file: LICENSE
+
+
+Local modifications:
+
+internet/_dumbwin32proc.py:
+  Edited _init__() to save the created process's PID.  Edited kill() to run
+  taskkill on that PID rather than calling TerminateProcess(), so that steps'
+  children are also killed.  Original version saved as _dumbwin32proc_orig.py.
+
+
+
+
+Edit Twisted so it doesn't induce deprecated module warnings.
+
+diff -Nur twisted.unpatched/internet/_sslverify.py twisted/internet/_sslverify.py
+--- twisted.unpatched/internet/_sslverify.py	2011-08-11 14:56:43.000000000 -0700
++++ twisted/internet/_sslverify.py	2011-08-11 14:56:59.000000000 -0700
+@@ -1,7 +1,8 @@
+ # -*- test-case-name: twisted.test.test_sslverify -*-
+ # Copyright 2005 Divmod, Inc.  See LICENSE file for details
+ 
+-import itertools, md5
++import hashlib
++import itertools
+ from OpenSSL import SSL, crypto
+ 
+ from twisted.python import reflect, util
+@@ -666,7 +667,7 @@
+         MD5 hex digest of signature on an empty certificate request with this
+         key.
+         """
+-        return md5.md5(self._emptyReq).hexdigest()
++        return hashlib.md5(self._emptyReq).hexdigest()
+ 
+ 
+     def inspect(self):
+@@ -942,7 +943,7 @@
+             ctx.set_options(self._OP_ALL)
+ 
+         if self.enableSessions:
+-            sessionName = md5.md5("%s-%d" % (reflect.qual(self.__class__), _sessionCounter())).hexdigest()
++            sessionName = hashlib.md5("%s-%d" % (reflect.qual(self.__class__), _sessionCounter())).hexdigest()
+             ctx.set_session_id(sessionName)
+ 
+         return ctx
+diff -Nur twisted.unpatched/persisted/sob.py twisted/persisted/sob.py
+--- twisted.unpatched/persisted/sob.py	2011-08-11 14:56:43.000000000 -0700
++++ twisted/persisted/sob.py	2011-08-11 14:56:59.000000000 -0700
+@@ -9,7 +9,8 @@
+ Maintainer: U{Moshe Zadka<mailto:moshez@twistedmatrix.com>}
+ """
+ 
+-import os, md5, sys
++import hashlib
++import os, sys
+ try:
+     import cPickle as pickle
+ except ImportError:
+@@ -31,11 +32,11 @@
+     leftover = len(data) % cipher.block_size
+     if leftover:
+         data += ' '*(cipher.block_size - leftover)
+-    return cipher.new(md5.new(passphrase).digest()[:16]).encrypt(data)
++    return cipher.new(hashlib.md5(passphrase).digest()[:16]).encrypt(data)
+ 
+ def _decrypt(passphrase, data):
+     from Crypto.Cipher import AES
+-    return AES.new(md5.new(passphrase).digest()[:16]).decrypt(data)
++    return AES.new(hashlib.md5(passphrase).digest()[:16]).decrypt(data)
+ 
+ 
+ class IPersistable(Interface):
+diff -Nur twisted.unpatched/python/filepath.py twisted/python/filepath.py
+--- twisted.unpatched/python/filepath.py	2011-08-11 14:56:43.000000000 -0700
++++ twisted/python/filepath.py	2011-08-11 14:56:59.000000000 -0700
+@@ -8,8 +8,8 @@
+ 
+ import os
+ import errno
++import hashlib
+ import random
+-import sha
+ import base64
+ 
+ from os.path import isabs, exists, normpath, abspath, splitext
+@@ -109,7 +109,7 @@
+     """
+     Create a pseudorandom, 16-character string for use in secure filenames.
+     """
+-    return armor(sha.new(randomBytes(64)).digest())[:16]
++    return armor(hashlib.sha1(randomBytes(64)).digest())[:16]
+ 
+ class _PathHelper:
+     """
+diff -Nur twisted.unpatched/spread/pb.py twisted/spread/pb.py
+--- twisted.unpatched/spread/pb.py	2011-08-11 14:56:43.000000000 -0700
++++ twisted/spread/pb.py	2011-08-11 14:56:59.000000000 -0700
+@@ -61,7 +61,7 @@
+ except ImportError:
+     import StringIO
+ 
+-import md5
++import hashlib
+ import random
+ import new
+ import types
+@@ -1007,10 +1007,10 @@
+ 
+     This is useful for challenge/response authentication.
+     """
+-    m = md5.new()
++    m = hashlib.md5()
+     m.update(password)
+     hashedPassword = m.digest()
+-    m = md5.new()
++    m = hashlib.md5()
+     m.update(hashedPassword)
+     m.update(challenge)
+     doubleHashedPassword = m.digest()
+@@ -1021,7 +1021,7 @@
+     crap = ''
+     for x in range(random.randrange(15,25)):
+         crap = crap + chr(random.randint(65,90))
+-    crap = md5.new(crap).digest()
++    crap = hashlib.md5(crap).digest()
+     return crap
+ 
+ 
+@@ -1337,12 +1337,12 @@
+ 
+     # IUsernameHashedPassword:
+     def checkPassword(self, password):
+-        return self.checkMD5Password(md5.md5(password).digest())
++        return self.checkMD5Password(hashlib.md5(password).digest())
+ 
+ 
+     # IUsernameMD5Password
+     def checkMD5Password(self, md5Password):
+-        md = md5.new()
++        md = hashlib.md5()
+         md.update(md5Password)
+         md.update(self.challenge)
+         correct = md.digest()

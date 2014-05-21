@@ -1,0 +1,1879 @@
+++ dirname src/build/android/buildbot/bb_fyi_builder.sh
++ BB_DIR=src/build/android/buildbot
+++ cd src/build/android/buildbot/../../..
+++ pwd
++ BB_SRC_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src
++ . src/build/android/buildbot/buildbot_functions.sh
+++ JOBS=4
++ bb_baseline_setup /mnt/data/b/build/slave/Android_Builder__dbg_/build/src '--build-properties={"blamelist":"gbillock@chromium.org","branch":"src","buildername":"Android Builder (dbg)","buildnumber":"8077","got_revision":"163097","mastername":"chromium.fyi","parent_builddir":"","parent_buildnumber":"","parentname":"","parentslavename":"","revision":"163097","scheduler":"chromium","slavename":"chromeperf35"}' '--factory-properties={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
++ SRC_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src
++ shift
++ cd /mnt/data/b/build/slave/Android_Builder__dbg_/build/src
++ [[ -n '' ]]
++ echo '@@@BUILD_STEP Environment setup@@@'
+@@@BUILD_STEP Environment setup@@@
++ bb_parse_args '--build-properties={"blamelist":"gbillock@chromium.org","branch":"src","buildername":"Android Builder (dbg)","buildnumber":"8077","got_revision":"163097","mastername":"chromium.fyi","parent_builddir":"","parent_buildnumber":"","parentname":"","parentslavename":"","revision":"163097","scheduler":"chromium","slavename":"chromeperf35"}' '--factory-properties={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
++ [[ -n --build-properties={"blamelist":"gbillock@chromium.org","branch":"src","buildername":"Android Builder (dbg)","buildnumber":"8077","got_revision":"163097","mastername":"chromium.fyi","parent_builddir":"","parent_buildnumber":"","parentname":"","parentslavename":"","revision":"163097","scheduler":"chromium","slavename":"chromeperf35"} ]]
++ case "$1" in
+++ echo '--build-properties={"blamelist":"gbillock@chromium.org","branch":"src","buildername":"Android Builder (dbg)","buildnumber":"8077","got_revision":"163097","mastername":"chromium.fyi","parent_builddir":"","parent_buildnumber":"","parentname":"","parentslavename":"","revision":"163097","scheduler":"chromium","slavename":"chromeperf35"}'
+++ sed 's/^[^=]*=//'
++ BUILD_PROPERTIES='{"blamelist":"gbillock@chromium.org","branch":"src","buildername":"Android Builder (dbg)","buildnumber":"8077","got_revision":"163097","mastername":"chromium.fyi","parent_builddir":"","parent_buildnumber":"","parentname":"","parentslavename":"","revision":"163097","scheduler":"chromium","slavename":"chromeperf35"}'
++ shift
++ [[ -n --factory-properties={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"} ]]
++ case "$1" in
+++ echo '--factory-properties={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
+++ sed 's/^[^=]*=//'
++ FACTORY_PROPERTIES='{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
+++ bb_get_json_prop '{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}' target
+++ local 'JSON={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
+++ local PROP=target
+++ python -c 'import json; print json.loads('\''{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'\'').get('\''target'\'', '\'''\'')'
++ BUILDTYPE=Debug
++ shift
++ [[ -n '' ]]
+++ bb_get_json_prop '{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}' buildtool
+++ local 'JSON={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
+++ local PROP=buildtool
+++ python -c 'import json; print json.loads('\''{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'\'').get('\''buildtool'\'', '\'''\'')'
++ local BUILDTOOL=ninja
++ [[ ninja = ninja ]]
++ export GYP_GENERATORS=ninja
++ GYP_GENERATORS=ninja
++ export GOMA_DIR=/b/build/goma
++ GOMA_DIR=/b/build/goma
++ . build/android/envsetup.sh
+++ [[ '' -eq 1 ]]
+++ export ANDROID_SDK_BUILD=1
+++ ANDROID_SDK_BUILD=1
+++ '[' '--build-properties={"blamelist":"gbillock@chromium.org","branch":"src","buildername":"Android Builder (dbg)","buildnumber":"8077","got_revision":"163097","mastername":"chromium.fyi","parent_builddir":"","parent_buildnumber":"","parentname":"","parentslavename":"","revision":"163097","scheduler":"chromium","slavename":"chromeperf35"}' '!=' '' ']'
+++ case $1 in
+++ shift
+++ break
+++ [[ 1 -eq 1 ]]
+++ echo 'Using SDK build'
+Using SDK build
++++ uname -s
++++ sed -e 's/Linux/linux/;s/Darwin/mac/'
+++ host_os=linux
+++ case "${host_os}" in
+++ toolchain_dir=linux-x86_64
+++++ dirname build/android/envsetup.sh
++++ readlink -f build/android/../../
+++ CURRENT_DIR=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src
+++ [[ -z '' ]]
+++ export CHROME_SRC=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src
+++ CHROME_SRC=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src
+++ [[ '' == \/\m\n\t\/\d\a\t\a\/\b\/\b\u\i\l\d\/\s\l\a\v\e\/\A\n\d\r\o\i\d\_\B\u\i\l\d\e\r\_\_\d\b\g\_\/\b\u\i\l\d\/\s\r\c ]]
+++ export ANDROID_SDK_VERSION=16
+++ ANDROID_SDK_VERSION=16
++++ dirname build/android/envsetup.sh
+++ . build/android/envsetup_functions.sh
+++ [[ 1 -eq 1 ]]
+++ sdk_build_init
+++ [[ -z '' ]]
+++ export ANDROID_NDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/
+++ ANDROID_NDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/
+++ local sdk_suffix=platforms/android-16
+++ [[ -z '' ]]
+++ export ANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/
+++ ANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/
+++ unset ANDROID_BUILD_TOP
+++ export TARGET_PRODUCT=trygon
+++ TARGET_PRODUCT=trygon
+++ unset ANDROID_TOOLCHAIN
+++ common_vars_defines
+++ toolchain_arch=arm-linux-androideabi
+++ [[ trygon =~ .*x86.* ]]
+++ toolchain_version=4.6
+++ gcc_version=46
++++ basename /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6
+++ toolchain_target=arm-linux-androideabi-4.6
+++ toolchain_path=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/
+++ export ANDROID_TOOLCHAIN=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/
+++ ANDROID_TOOLCHAIN=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/
+++ common_check_toolchain
+++ [[ ! -d /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/ ]]
+++ export PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/
+++ PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/
+++ export PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools
+++ PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools
+++ export PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools
+++ PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools
+++ export PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/arm-linux-androideabi-gold
+++ PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/arm-linux-androideabi-gold
+++ export PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/arm-linux-androideabi-gold:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/
+++ PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/arm-linux-androideabi-gold:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/
+++ export PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/arm-linux-androideabi-gold:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android
+++ PATH=/mnt/data/b/depot_tools:/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/arm-linux-androideabi-gold:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/:/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android
++++ echo /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-objcopy
+++ export OBJCOPY=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-objcopy
+++ OBJCOPY=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-objcopy
++++ echo /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-strip
+++ export STRIP=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-strip
+++ STRIP=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-strip
+++ DEFINES=OS=android
+++ DEFINES+=' host_os=linux'
+++ DEFINES+=' gcc_version=46'
+++ [[ -n '' ]]
+++ ORDER_DEFINES=order_text_section=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/orderfiles/orderfile.out
+++ case "${TARGET_PRODUCT}" in
+++ DEFINES+=' arm_neon=0 armv7=1 arm_thumb=1 arm_fpu=vfpv3-d16'
+++ DEFINES+=' order_text_section=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/orderfiles/orderfile.out'
+++ TARGET_ARCH=arm
+++ case "${TARGET_ARCH}" in
+++ DEFINES+=' target_arch=arm'
+++ DEFINES+=' android_gdbserver=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver'
+++ DEFINES+=' sdk_build=1'
+++ case "${ANDROID_BUILD_TOP-undefined}" in
+++ DEFINES+=' android_upstream_bringup=1'
+++ DEFINES+=' android_src='\''NOT_SDK_COMPLIANT'\'''
+++ DEFINES+=' android_product_out=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android'
+++ DEFINES+=' android_lib='\''NOT_SDK_COMPLIANT'\'''
+++ DEFINES+=' android_static_lib='\''NOT_SDK_COMPLIANT'\'''
+++ DEFINES+=' android_sdk=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16'
+++ DEFINES+=' android_sdk_root=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/'
+++ DEFINES+=' android_sdk_tools=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools'
+++ DEFINES+=' android_sdk_version=16'
+++ DEFINES+=' android_toolchain=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/'
+++ common_gyp_vars
+++ export 'GYP_DEFINES=OS=android host_os=linux gcc_version=46 arm_neon=0 armv7=1 arm_thumb=1 arm_fpu=vfpv3-d16 order_text_section=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/orderfiles/orderfile.out target_arch=arm android_gdbserver=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver sdk_build=1 android_upstream_bringup=1 android_src='\''NOT_SDK_COMPLIANT'\'' android_product_out=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android android_lib='\''NOT_SDK_COMPLIANT'\'' android_static_lib='\''NOT_SDK_COMPLIANT'\'' android_sdk=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16 android_sdk_root=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/ android_sdk_tools=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools android_sdk_version=16 android_toolchain=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/'
+++ GYP_DEFINES='OS=android host_os=linux gcc_version=46 arm_neon=0 armv7=1 arm_thumb=1 arm_fpu=vfpv3-d16 order_text_section=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/orderfiles/orderfile.out target_arch=arm android_gdbserver=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver sdk_build=1 android_upstream_bringup=1 android_src='\''NOT_SDK_COMPLIANT'\'' android_product_out=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android android_lib='\''NOT_SDK_COMPLIANT'\'' android_static_lib='\''NOT_SDK_COMPLIANT'\'' android_sdk=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16 android_sdk_root=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/ android_sdk_tools=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools android_sdk_version=16 android_toolchain=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/'
+++ export GYP_GENERATORS=ninja
+++ GYP_GENERATORS=ninja
+++ export 'GYP_GENERATOR_FLAGS= default_target=All'
+++ GYP_GENERATOR_FLAGS=' default_target=All'
+++ export CHROMIUM_GYP_FILE=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/all_android.gyp
+++ CHROMIUM_GYP_FILE=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/all_android.gyp
+++ [[ -n '' ]]
+++ [[ -n '' ]]
+++ . /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/adb_device_functions.sh
+++ ANDROID_GOMA_WRAPPER=
+++ [[ -d /b/build/goma ]]
+++ ANDROID_GOMA_WRAPPER=/b/build/goma/gomacc
+++ export ANDROID_GOMA_WRAPPER
+++ export GYP_CROSSCOMPILE=1
+++ GYP_CROSSCOMPILE=1
+++ which flock
++ adb kill-server
++ adb start-server
+* daemon not running. starting it now on port 5037 *
+* daemon started successfully *
++ bb_check_webview_licenses
++ echo '@@@BUILD_STEP Check licenses for WebView@@@'
+@@@BUILD_STEP Check licenses for WebView@@@
++ set +e
++ cd /mnt/data/b/build/slave/Android_Builder__dbg_/build/src
++ python android_webview/tools/webview_licenses.py scan
+grep: ./native_client/toolchain/pnacl_linux_x86/newlib/sysroot/sys-include: No such file or directory
+OK!
++ [[ 0 -ne 0 ]]
++ return 0
++ bb_compile
++ echo '@@@BUILD_STEP compile@@@'
+@@@BUILD_STEP compile@@@
++ bb_compile_setup
+++ bb_get_json_prop '{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}' extra_gyp_defines
+++ local 'JSON={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
+++ local PROP=extra_gyp_defines
+++ python -c 'import json; print json.loads('\''{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'\'').get('\''extra_gyp_defines'\'', '\'''\'')'
++ local extra_gyp_defines=
++ export 'GYP_DEFINES+= fastbuild=1 '
++ GYP_DEFINES+=' fastbuild=1 '
++ echo
++ grep -q clang
++ bb_setup_goma_internal
++ export GOMA_API_KEY_FILE=/b/build/goma/goma.key
++ GOMA_API_KEY_FILE=/b/build/goma/goma.key
++ export GOMA_COMPILER_PROXY_DAEMON_MODE=true
++ GOMA_COMPILER_PROXY_DAEMON_MODE=true
++ export GOMA_COMPILER_PROXY_RPC_TIMEOUT_SECS=300
++ GOMA_COMPILER_PROXY_RPC_TIMEOUT_SECS=300
++ echo 'Killing old goma processes'
+Killing old goma processes
++ /b/build/goma/goma_ctl.sh stop
+Killing compiler proxy (pid=29431):  http://127.0.0.1:8088 
+done.
++ killall -9 compiler_proxy
++ echo 'Starting goma'
+Starting goma
++ /b/build/goma/goma_ctl.sh start
+Using goma VERSION=31 (no_auto_update)...
+no zombie compiler_proxy
+GOMA version 0a3e66a386ccc0998aa2ebee2f4a16626477c273@1349772973
+waiting for compiler_proxy's unix domain socket...20
+compiler proxy (pid=30534) status:  http://127.0.0.1:8088/ alive
+
+Now goma is ready!
+
++ trap bb_stop_goma_internal SIGHUP SIGINT SIGTERM
++ gclient runhooks
+
+________ running '/usr/bin/python src/build/download_nacl_toolchains.py --no-arm-trusted --save-downloads-dir src/native_client_sdk/src/build_tools/toolchain_archives --keep' in '/mnt/data/b/build/slave/Android_Builder__dbg_/build'
+/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/native_client/toolchain/.tars/toolchain_linux_x86.tar.bz2 is already up to date.
+linux_x86: already up to date.
+/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/native_client/toolchain/.tars/naclsdk_linux_x86.tgz is already up to date.
+linux_x86_newlib: already up to date.
+/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/native_client/toolchain/.tars/naclsdk_pnacl_linux_x86.tgz is already up to date.
+pnacl_linux_x86: already up to date.
+/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/native_client/toolchain/.tars/naclsdk_pnacl_translator.tgz is already up to date.
+pnacl_translator: already up to date.
+
+________ running '/usr/bin/python src/tools/clang/scripts/update.py --mac-only' in '/mnt/data/b/build/slave/Android_Builder__dbg_/build'
+
+________ running '/usr/bin/python src/build/win/setup_cygwin_mount.py --win-only' in '/mnt/data/b/build/slave/Android_Builder__dbg_/build'
+
+________ running '/usr/bin/python src/build/util/lastchange.py -o src/build/util/LASTCHANGE' in '/mnt/data/b/build/slave/Android_Builder__dbg_/build'
+
+________ running '/usr/bin/python src/build/gyp_chromium' in '/mnt/data/b/build/slave/Android_Builder__dbg_/build'
+Updating projects from gyp files..on_prop '{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}' buildtool
+++ local 'JSON={"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'
+++ local PROP=buildtool
+++ python -c 'import json; print json.loads('\''{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}'\'').get('\''buildtool'\'', '\'''\'')'
++ BUILDTOOL=ninja
++ [[ ninja = ninja ]]
++ bb_goma_ninja All
++ echo 'Using ninja to build.'
+Using ninja to build.
++ local TARGET=All
++ ninja -C out/Debug -j120 -l20 All
+ninja: Entering directory `out/Debug'
+ninja: warning: multiple rules generate android_webview_test/assets/asset_file.html.svn-base. build will not be correct; continuing anyway
+[1/114] ACTION Generating version information
+[2/114] CXX obj/cc/cc.single_thread_proxy.o
+[3/114] CXX obj/cc/cc.texture_layer_impl.o
+[4/114] CXX obj/cc/cc.thread_proxy.o
+[5/114] CXX obj/cc/cc.video_layer_impl.o
+[6/114] CXX obj/cc/cc.content_layer.o
+[7/114] CXX obj/cc/cc.heads_up_display_layer.o
+[8/114] CXX obj/cc/cc.geometry_binding.o
+[9/114] CXX obj/cc/cc.image_layer.o
+[10/114] CXX obj/cc/cc.layer.o
+[11/114] CXX obj/cc/cc.program_binding.o
+[12/114] CXX obj/cc/cc.scrollbar_layer.o
+[13/114] CXX obj/cc/cc.texture_copier.o
+[14/114] CXX obj/cc/cc.texture_layer.o
+[15/114] CXX obj/cc/cc.tiled_layer.o
+[16/114] CXX obj/cc/cc.debug_rect_history.o
+[17/114] CXX obj/cc/cc.direct_renderer.o
+[18/114] CXX obj/cc/cc.heads_up_display_layer_impl.o
+[19/114] CXX obj/cc/cc.io_surface_layer_impl.o
+[20/114] CXX obj/cc/cc.layer_tree_host.o
+[21/114] CXX obj/cc/cc.layer_tree_host_impl.o
+[22/114] CXX obj/cc/cc.overdraw_metrics.o
+[23/114] CXX obj/cc/cc.prioritized_texture.o
+[24/114] CXX obj/cc/cc.prioritized_texture_manager.o
+[25/114] CXX obj/cc/cc.renderer.o
+[26/114] CXX obj/cc/cc.gl_renderer.o
+[27/114] CXX obj/cc/cc.software_renderer.o
+[28/114] CXX obj/cc/cc.resource_provider.o
+[29/114] CXX obj/webkit/compositor_bindings/webkit_compositor_bindings.web_layer_tree_view_impl.o
+[30/114] CXX obj/webkit/compositor_bindings/webkit_compositor_bindings.web_compositor_impl.o
+[31/114] CXX obj/cc/test/cc_test_support.layer_tree_test_common.o
+[32/114] CXX obj/cc/test/cc_test_support.fake_layer_tree_host_client.o
+[33/114] CXX obj/cc/cc_unittests.scrollbar_animation_controller_linear_fade_unittest.o
+[34/114] CXX obj/cc/cc_unittests.solid_color_layer_impl_unittest.o
+[35/114] CXX obj/cc/cc_unittests.tiled_layer_impl_unittest.o
+[36/114] CXX obj/cc/cc_unittests.layer_unittest.o
+[37/114] CXX obj/cc/cc_unittests.scrollbar_layer_unittest.o
+[38/114] CXX obj/cc/cc_unittests.texture_layer_unittest.o
+[39/114] CXX obj/cc/cc_unittests.tiled_layer_unittest.o
+[40/114] CXX obj/cc/cc_unittests.tree_synchronizer_unittest.o
+[41/114] CXX obj/content/browser/intents/content_browser.web_intents_dispatcher_impl.o
+[42/114] CXX obj/cc/cc_unittests.damage_tracker_unittest.o
+[43/114] CXX obj/cc/cc_unittests.heads_up_display_unittest.o
+[44/114] CXX obj/cc/cc_unittests.delegated_renderer_layer_impl_unittest.o
+[45/114] CXX obj/cc/cc_unittests.layer_impl_unittest.o
+[46/114] CXX obj/cc/cc_unittests.layer_sorter_unittest.o
+[47/114] CXX obj/cc/cc_unittests.layer_tree_host_unittest.o
+[48/114] CXX obj/cc/cc_unittests.layer_tree_host_common_unittest.o
+[49/114] CXX obj/cc/cc_unittests.layer_tree_host_impl_unittest.o
+[50/114] CXX obj/cc/cc_unittests.texture_update_controller_unittest.o
+[51/114] CXX obj/cc/cc_unittests.quad_culler_unittest.o
+[52/114] CXX obj/cc/cc_unittests.occlusion_tracker_unittest.o
+[53/114] CXX obj/cc/cc_unittests.prioritized_texture_unittest.o
+[54/114] CXX obj/cc/cc_unittests.software_renderer_unittest.o
+[55/114] CXX obj/cc/cc_unittests.render_surface_unittest.o
+[56/114] CXX obj/cc/cc_unittests.gl_renderer_unittest.o
+[57/114] CXX obj/cc/cc_unittests.resource_provider_unittest.o
+[58/114] CXX obj/cc/cc_unittests.scoped_texture_unittest.o
+[59/114] STAMP obj/chrome/common.compile_depends.stamp
+[60/114] STAMP obj/chrome/common.actions_depends.stamp
+[61/114] CXX obj/chrome/common/common.chrome_version_info.o
+[62/114] STAMP obj/android_webview/libwebview.compile_depends.stamp
+[63/114] STAMP obj/chrome/libchromiumtestshell.compile_depends.stamp
+[64/114] AR obj/webkit/compositor_bindings/libwebkit_compositor_bindings.a
+[65/114] AR obj/content/libcontent_browser.a
+[66/114] STAMP obj/content/content.actions_depends.stamp
+[67/114] AR obj/chrome/libcommon.a
+[68/114] AR obj/cc/libcc_test_support.a
+[69/114] AR obj/cc/libcc.a
+[70/114] SOLINK lib/libwebkit_unit_tests.so
+[71/114] SOLINK lib/libTestWebKitAPI.so
+[72/114] SOLINK lib/libcontent_unittests.so
+[73/114] STAMP obj/third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.actions_depends.stamp
+[74/114] SOLINK lib/libcontent_shell_content_view.so
+[75/114] SOLINK lib/libwebview.so
+[76/114] STAMP obj/chrome/unit_tests.actions_depends.stamp
+[77/114] SOLINK lib/libchromiumtestshell.so
+[78/114] SOLINK lib/libDumpRenderTree.so
+[79/114] SOLINK lib/libunit_tests.so
+[80/114] SOLINK lib/libcc_unittests.so
+[81/114] ACTION Building content_shell apk.
+[82/114] RULE content_shell_apk: copy_and_strip_native_libraries_e0eb9270fe7b9ceb9841e1de6c0d4737 ../out/Debug/lib/libcontent_shell_content_view.so
++ mkdir -p /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android/symbols/data/data/org.chromium.content_shell/lib/
++ /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-strip --strip-unneeded ../out/Debug/lib/libcontent_shell_content_view.so -o ../out/Debug/content_shell/libs/armeabi-v7a/libcontent_shell_content_view.so
++ ln -f ../out/Debug/lib/libcontent_shell_content_view.so /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android/symbols/data/data/org.chromium.content_shell/lib/
+[83/112] RULE android_webview_apk: copy_and_strip_native_libraries_c488f8d8e86b000e525b5afae98d3423 ../out/Debug/lib/libwebview.so
+[84/112] ACTION Building android_webview apk.
+[85/112] COPY ../../android_webview/javatests/assets/.svn/entries android_webview_test/assets/entries
+[86/112] ACTION Building android_webview_test apk.
++ mkdir -p /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android/symbols/data/data/org.chromium.android_webview/lib/
++ /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-strip --strip-unneeded ../out/Debug/lib/libwebview.so -o ../out/Debug/android_webview/libs/armeabi-v7a/libwebview.so
++ ln -f ../out/Debug/lib/libwebview.so /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android/symbols/data/data/org.chromium.android_webview/lib/
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/ant/chromium-apk.xml
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: ContentShell
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for ContentShell...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+    [mkdir] Created dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/content/shell/android/java/libs
+     [echo] ----------
+     [echo] Resolving Dependencies for ContentShell...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/content/shell/android/java/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] No changes in the AndroidManifest files.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] No changed resources. R.java and Manifest.java untouched.
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 7 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/lib.java/chromium_apk_content_shell.jar
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/content/shell/android/res
+   [crunch] To destinat
+   [crunch] ion dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] No changed resources or assets. ContentShell.ap_ remains untouched
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating ContentShell-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/apks/ContentShell.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell/build.prop
+
+-post-build:
+
+debug:
+
+Debug:
+
+BUILD SUCCESSFUL
+Total time: 20 seconds
+[87/112] STAMP obj/content/content_shell_apk.actions_rules_copies.stamp
+[88/112] STAMP obj/content/content_shell_java.actions_depends.stamp
+[89/112] ACTION Building content_shell_test apk.
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/ant/chromium-apk.xml
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: ContentShellTest
+  [gettype] Project Type: Self-Tested Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for ContentShellTest...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+    [mkdir] Created dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/content/shell/android/javatests/libs
+     [echo] ----------
+     [echo] Resolving Dependencies for ContentShellTest...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/content/shell/android/javatests/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] No changes in the AndroidManifest files.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] No changed resources. R.java and Manifest.java untouched.
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 23 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/classes
+     [echo] Creating test jar file:
+     [echo]               ContentShellTest.jar
+     [echo] Creating test jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/test.lib.java/ContentShellTest.jar
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/test.lib.java/ContentShellTest.jar
+
+-post-compile:
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/lib.java/chromium_apk_content_shell_test.jar
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/content/shell/android/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/res
+   [crunch] Crunched 0 PNG files to update
+   [crunch]  cache
+
+-package-resources:
+     [aapt] No changed resources or assets. ContentShellTest.ap_ remains untouched
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating ContentShellTest-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/apks/ContentShellTest.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_shell_test/build.prop
+
+-post-build:
+
+debug:
+
+Debug:
+
+BUILD SUCCESSFUL
+Total time: 7 seconds
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/ant/chromium-apk.xml
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: AndroidWebViewTest
+  [gettype] Project Type: Self-Tested Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for AndroidWebViewTest...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+    [mkdir] Created dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/android_webview/javatests/libs
+     [echo] ----------
+     [echo] Resolving Dependencies for AndroidWebViewTest...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/android_webview/javatests/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] No changes in the AndroidManifest files.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] No changed resources. R.java and Manifest.java untouched.
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 37 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/classes
+    [javac] Note: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/android_webview/javatests/src/org/chromium/android_webview/test/AwSettingsTest.java uses or overrides a deprecated API.
+    [javac] Note: Recompile with -Xlint:deprecation for details.
+     [echo] Creating test jar file:
+     [echo]               AndroidWebViewTest.jar
+     [echo] Creating test jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/test.lib.java/AndroidWebViewTest.jar
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/test.lib.java/AndroidWebViewTest.jar
+
+-post-compile:
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/lib.java/chromium_apk_android_webview_test.jar
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/android_webview/javatests/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/res
+   [crunch] Crunched 0 PNG files to 
+   [crunch] update cache
+
+-package-resources:
+     [aapt] Found modified input file
+     [aapt] Creating full resource package...
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating AndroidWebViewTest-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/apks/AndroidWebViewTest.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview_test/build.prop
+
+-post-build:
+
+debug:
+
+Debug:
+
+BUILD SUCCESSFUL
+Total time: 10 seconds
+[90/112] STAMP obj/android_webview/android_webview_test_apk.actions_rules_copies.stamp
+[91/111] RULE chromium_testshell: copy_and_strip_native_libraries_579b1e7275d47d431d16bb552351b8bd ../out/Debug/lib/libchromiumtestshell.so
+[92/111] ACTION Building chromium_testshell apk.
++ mkdir -p /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android/symbols/data/data/org.chromium.chrome.testshell/lib/
++ /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin//arm-linux-androideabi-strip --strip-unneeded ../out/Debug/lib/libchromiumtestshell.so -o ../out/Debug/chromium_testshell/libs/armeabi-v7a/libchromiumtestshell.so
++ ln -f ../out/Debug/lib/libchromiumtestshell.so /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/android/symbols/data/data/org.chromium.chrome.testshell/lib/
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/ant/chromium-apk.xml
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: AndroidWebView
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for AndroidWebView...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+    [mkdir] Created dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/android_webview/java/libs
+     [echo] ----------
+     [echo] Resolving Dependencies for AndroidWebView...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/android_webview/java/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] No changes in the AndroidManifest files.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] No changed resources. R.java and Manifest.java untouched.
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 18 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview/classes
+    [javac] Note: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/android_webview/java/src/org/chromium/android_webview/AwContents.java uses or overrides a deprecated API.
+    [javac] Note: Recompile with -Xlint:deprecation for details.
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/lib.java/chromium_apk_android_webview.jar
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: 
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/androi
+   [crunch] d_webview/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] No changed resources or assets. AndroidWebView.ap_ remains untouched
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating AndroidWebView-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/apks/AndroidWebView.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/android_webview/build.prop
+
+-post-build:
+
+debug:
+
+Debug:
+
+BUILD SUCCESSFUL
+Total time: 23 seconds
+[93/111] STAMP obj/android_webview/android_webview_apk.actions_rules_copies.stamp
+[94/110] ACTION Building webkit_unit_tests test apk.
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/ant/chromium-apk.xml
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: ChromiumTestShell
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for ChromiumTestShell...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+    [mkdir] Created dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/chrome/android/testshell/java/libs
+     [echo] ----------
+     [echo] Resolving Dependencies for ChromiumTestShell...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/chrome/android/testshell/java/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] No changes in the AndroidManifest files.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] No changed resources. R.java and Manifest.java untouched.
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 7 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/lib.java/chromium_apk_chromium_testshell.jar
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/chrome/android/testshell/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] No changed resources or assets. ChromiumTestShell.ap_ remains untouched
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating ChromiumTestShell-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/apks/ChromiumTestShell.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell/build.prop
+
+-post-build:
+
+debug:
+
+Debug:
+
+BUILD SUCCESSFUL
+Total time: 26 seconds
+[95/110] STAMP obj/chrome/chromium_testshell.actions_rules_copies.stamp
+[96/110] STAMP obj/chrome/chromium_testshell_java.actions_depends.stamp
+[97/110] STAMP obj/chrome/chromium_testshell_test_apk.actions_depends.stamp
+[98/110] ACTION Building chromium_testshell_test apk.
+WARNING:root:root name: webkit_unit_tests
+WARNING:root:rsync ['AndroidManifest.xml', 'native_test_apk.xml', 'res', 'java'] --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk
+WARNING:root:Replacing "replaceme" with webkit_unit_tests
+WARNING:root:strip ../../../../../out/Debug/lib/libwebkit_unit_tests.so --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/libs/armeabi-v7a/libwebkit_unit_tests.so
+WARNING:root:../../../../../out/Debug/lib.java/chromium_base.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/java/libs/chromium_base.jar
+WARNING:root:../../../../../out/Debug/lib.java/chromium_net.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/java/libs/chromium_net.jar
+WARNING:root:../../../../../out/Debug/lib.java/chromium_ui.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/java/libs/chromium_ui.jar
+WARNING:root:['ant', '-DANDROID_SDK=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16', '-DANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/', '-DANDROID_SDK_TOOLS=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools', '-DANDROID_SDK_VERSION=16', '-DANDROID_TOOLCHAIN=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/', '-DANDROID_GDBSERVER=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver', '-DPRODUCT_DIR=`cd ../../../../../out/Debug && pwd -P`', '-DCHROMIUM_SRC=`cd ../../../../../out/Debug && pwd -P`/../../', '-DAPP_ABI=armeabi-v7a', '-buildfile', '/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/native_test_apk.xml']
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/native_test_apk.xml
+     [copy] Copying 1 file to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/manifest
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: webkit_unit_tests
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for webkit_unit_tests...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+     [echo] ----------
+     [echo] Resolving Dependencies for webkit_unit_tests...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] Found modified input file
+[mergemanifest] Merging AndroidManifest files into one.
+[mergemanifest] Manifest merger disabled. Using project manifest only.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] Found modified input file
+     [aapt] Generating resource IDs...
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 3 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/res
+   [crunch] Crunched 0 PNG fi
+   [crunch] les to update cache
+
+-package-resources:
+     [aapt] Found modified input file
+     [aapt] Creating full resource package...
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating webkit_unit_tests-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/webkit_unit_tests-debug.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/webkit_unit_tests_apk/build.prop
+
+-post-build:
+
+debug:
+
+BUILD SUCCESSFUL
+Total time: 14 seconds
+WARNING:root:None
+WARNING:root:COMPLETE.
+[99/109] ACTION Building content_unittests test apk.
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/build/android/ant/chromium-apk.xml
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: ChromiumTestShellTest
+  [gettype] Project Type: Self-Tested Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for ChromiumTestShellTest...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+    [mkdir] Created dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/chrome/android/testshell/javatests/libs
+     [echo] ----------
+     [echo] Resolving Dependencies for ChromiumTestShellTest...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/chrome/android/testshell/javatests/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] No changes in the AndroidManifest files.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] No changed resources. R.java and Manifest.java untouched.
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 10 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/classes
+     [echo] Creating test jar file:
+     [echo]               ChromiumTestShellTest.jar
+     [echo] Creating test jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/test.lib.java/ChromiumTestShellTest.jar
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/test.lib.java/ChromiumTestShellTest.jar
+
+-post-compile:
+      [jar] Building jar: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/lib.java/chromium_apk_chromium_testshell_test.jar
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/chrome/android/testshell/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] No changed resources or assets. ChromiumTestShellTest.ap_ remains untouched
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating ChromiumTestShellTest-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/apks/ChromiumTestShellTest.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/chromium_testshell_test/build.prop
+
+-post-build:
+
+debug:
+
+Debug:
+
+BUILD SUCCESSFUL
+Total time: 7 seconds
+[100/109] ACTION Building cc_unittests test apk.
+WARNING:root:root name: cc_unittests
+WARNING:root:rsync ['AndroidManifest.xml', 'native_test_apk.xml', 'res', 'java'] --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk
+WARNING:root:Replacing "replaceme" with cc_unittests
+WARNING:root:strip ../out/Debug/lib/libcc_unittests.so --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/libs/armeabi-v7a/libcc_unittests.so
+WARNING:root:../out/Debug/lib.java/chromium_base.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/java/libs/chromium_base.jar
+WARNING:root:../out/Debug/lib.java/chromium_net.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/java/libs/chromium_net.jar
+WARNING:root:../out/Debug/lib.java/chromium_ui.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/java/libs/chromium_ui.jar
+WARNING:root:['ant', '-DPRODUCT_DIR=`cd ../out/Debug && pwd -P`', '-DANDROID_SDK=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16', '-DANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/', '-DANDROID_SDK_TOOLS=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools', '-DANDROID_SDK_VERSION=16', '-DANDROID_GDBSERVER=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver', '-DCHROMIUM_SRC=`cd ../out/Debug && pwd -P`/../..', '-DAPP_ABI=armeabi-v7a', '-buildfile', '/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/native_test_apk.xml']
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/native_test_apk.xml
+     [copy] Copying 1 file to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/manifest
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: cc_unittests
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for cc_unittests...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+     [echo] ----------
+     [echo] Resolving Dependencies for cc_unittests...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] Found modified input file
+[mergemanifest] Merging AndroidManifest files into one.
+[mergemanifest] Manifest merger disabled. Using project manifest only.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] Found modified input file
+     [aapt] Generating resource IDs...
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 3 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] Found modified input file
+     [aapt] Creating full resource package...
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating cc_unittests-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/cc_unittests-debug.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/cc_unittests_apk/build.prop
+
+-post-build:
+
+debug:
+
+BUILD SUCCESSFUL
+Total time: 4 seconds
+WARNING:root:None
+WARNING:root:COMPLETE.
+[101/108] ACTION Building TestWebKitAPI test apk.
+WARNING:root:root name: content_unittests
+WARNING:root:rsync ['AndroidManifest.xml', 'native_test_apk.xml', 'res', 'java'] --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk
+WARNING:root:Replacing "replaceme" with content_unittests
+WARNING:root:strip ../out/Debug/lib/libcontent_unittests.so --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/libs/armeabi-v7a/libcontent_unittests.so
+WARNING:root:../out/Debug/lib.java/chromium_base.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/java/libs/chromium_base.jar
+WARNING:root:../out/Debug/lib.java/chromium_content.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/java/libs/chromium_content.jar
+WARNING:root:../out/Debug/lib.java/chromium_net.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/java/libs/chromium_net.jar
+WARNING:root:../out/Debug/lib.java/chromium_ui.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/java/libs/chromium_ui.jar
+WARNING:root:['ant', '-DPRODUCT_DIR=`cd ../out/Debug && pwd -P`', '-DANDROID_SDK=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16', '-DANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/', '-DANDROID_SDK_TOOLS=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools', '-DANDROID_SDK_VERSION=16', '-DANDROID_GDBSERVER=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver', '-DCHROMIUM_SRC=`cd ../out/Debug && pwd -P`/../..', '-DAPP_ABI=armeabi-v7a', '-buildfile', '/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/native_test_apk.xml']
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/native_test_apk.xml
+     [copy] Copying 1 file to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/manifest
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: content_unittests
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for content_unittests...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+     [echo] ----------
+     [echo] Resolving Dependencies for content_unittests...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] Found modified input file
+[mergemanifest] Merging AndroidManifest files into one.
+[mergemanifest] Manifest merger disabled. Using project manifest only.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] Found modified input file
+     [aapt] Generating resource IDs...
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 3 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] Found modified input file
+     [aapt] Creating full resource package...
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating content_unittests-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/content_unittests-debug.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/content_unittests_apk/build.prop
+
+-post-build:
+
+debug:
+
+BUILD SUCCESSFUL
+Total time: 19 seconds
+WARNING:root:None
+WARNING:root:COMPLETE.
+[102/107] ACTION Building DumpRenderTree test apk.
+WARNING:root:root name: TestWebKitAPI
+WARNING:root:rsync ['AndroidManifest.xml', 'native_test_apk.xml', 'res', 'java'] --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk
+WARNING:root:Replacing "replaceme" with TestWebKitAPI
+WARNING:root:strip ../../../../../out/Debug/lib/libTestWebKitAPI.so --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/libs/armeabi-v7a/libTestWebKitAPI.so
+WARNING:root:../../../../../out/Debug/lib.java/chromium_base.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/java/libs/chromium_base.jar
+WARNING:root:['ant', '-DANDROID_SDK=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16', '-DANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/', '-DANDROID_SDK_TOOLS=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools', '-DANDROID_SDK_VERSION=16', '-DANDROID_TOOLCHAIN=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/', '-DANDROID_GDBSERVER=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver', '-DPRODUCT_DIR=`cd ../../../../../out/Debug && pwd -P`', '-DCHROMIUM_SRC=`cd ../../../../../out/Debug && pwd -P`/../../', '-DAPP_ABI=armeabi-v7a', '-buildfile', '/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/native_test_apk.xml']
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/native_test_apk.xml
+     [copy] Copying 1 file to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/manifest
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: TestWebKitAPI
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for TestWebKitAPI...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+     [echo] ----------
+     [echo] Resolving Dependencies for TestWebKitAPI...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] Found modified input file
+[mergemanifest] Merging AndroidManifest files into one.
+[mergemanifest] Manifest merger disabled. Using project manifest only.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] Found modified input file
+     [aapt] Generating resource IDs...
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 3 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/res
+   [crunch] To de
+   [crunch] stination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] Found modified input file
+     [aapt] Creating full resource package...
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating TestWebKitAPI-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/TestWebKitAPI-debug.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/TestWebKitAPI_apk/build.prop
+
+-post-build:
+
+debug:
+
+BUILD SUCCESSFUL
+Total time: 14 seconds
+WARNING:root:None
+WARNING:root:COMPLETE.
+WARNING:root:root name: DumpRenderTree
+WARNING:root:rsync ['AndroidManifest.xml', 'native_test_apk.xml', 'res', 'java'] --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk
+WARNING:root:Replacing "replaceme" with DumpRenderTree
+WARNING:root:strip ../../../../../out/Debug/lib/libDumpRenderTree.so --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/libs/armeabi-v7a/libDumpRenderTree.so
+WARNING:root:../../../../../out/Debug/lib.java/chromium_base.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/java/libs/chromium_base.jar
+WARNING:root:../../../../../out/Debug/lib.java/chromium_net.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/java/libs/chromium_net.jar
+WARNING:root:../../../../../out/Debug/lib.java/chromium_media.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/java/libs/chromium_media.jar
+WARNING:root:['ant', '-DANDROID_SDK=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16', '-DANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/', '-DANDROID_SDK_TOOLS=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools', '-DANDROID_SDK_VERSION=16', '-DANDROID_TOOLCHAIN=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/', '-DANDROID_GDBSERVER=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver', '-DPRODUCT_DIR=`cd ../../../../../out/Debug && pwd -P`', '-DCHROMIUM_SRC=`cd ../../../../../out/Debug && pwd -P`/../../', '-DAPP_ABI=armeabi-v7a', '-buildfile', '/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/native_test_apk.xml']
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/native_test_apk.xml
+     [copy] Copying 1 file to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/manifest
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: DumpRenderTree
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for DumpRenderTree...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+     [echo] ----------
+     [echo] Resolving Dependencies for DumpRenderTree...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] Found modified input file
+[mergemanifest] Merging AndroidManifest files into one.
+[mergemanifest] Manifest merger disabled. Using project manifest only.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] Found modified input file
+     [aapt] Generating resource IDs...
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 3 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] Found modified input file
+     [aapt] Creating full resource package...
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating DumpRenderTree-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/DumpRenderTree-debug.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/DumpRenderTree_apk/build.prop
+
+-post-build:
+
+debug:
+
+BUILD SUCCESSFUL
+Total time: 14 seconds
+WARNING:root:None
+WARNING:root:COMPLETE.
+[103/107] STAMP obj/third_party/WebKit/Source/WebKit/chromium/all_webkit.actions_depends.stamp
+[104/106] ACTION Building unit_tests test apk.
+WARNING:root:root name: unit_tests
+WARNING:root:rsync ['AndroidManifest.xml', 'native_test_apk.xml', 'res', 'java'] --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk
+WARNING:root:Replacing "replaceme" with unit_tests
+WARNING:root:strip ../out/Debug/lib/libunit_tests.so --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/libs/armeabi-v7a/libunit_tests.so
+WARNING:root:../out/Debug/lib.java/chromium_base.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/java/libs/chromium_base.jar
+WARNING:root:../out/Debug/lib.java/chromium_chrome.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/java/libs/chromium_chrome.jar
+WARNING:root:../out/Debug/lib.java/chromium_web_contents_delegate_android.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/java/libs/chromium_web_contents_delegate_android.jar
+WARNING:root:../out/Debug/lib.java/chromium_content.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/java/libs/chromium_content.jar
+WARNING:root:../out/Debug/lib.java/chromium_net.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/java/libs/chromium_net.jar
+WARNING:root:../out/Debug/lib.java/chromium_ui.jar --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/java/libs/chromium_ui.jar
+WARNING:root:['ant', '-DPRODUCT_DIR=`cd ../out/Debug && pwd -P`', '-DANDROID_SDK=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platforms/android-16', '-DANDROID_SDK_ROOT=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk/', '-DANDROID_SDK_TOOLS=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk//platform-tools', '-DANDROID_SDK_VERSION=16', '-DANDROID_GDBSERVER=/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/ndk//prebuilt/android-arm/gdbserver/gdbserver', '-DCHROMIUM_SRC=`cd ../out/Debug && pwd -P`/../..', '-DAPP_ABI=armeabi-v7a', '-buildfile', '/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/native_test_apk.xml']
+Buildfile: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/native_test_apk.xml
+     [copy] Copying 1 file to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/manifest
+
+-set-mode-check:
+
+-set-debug-files:
+
+-check-env:
+ [checkenv] Android SDK Tools Revision 20.0.1
+ [checkenv] Installed at /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/third_party/android_tools/sdk
+
+-setup:
+     [echo] Project Name: unit_tests
+  [gettype] Project Type: Application
+
+-set-debug-mode:
+
+-debug-obfuscation-check:
+
+-build-setup:
+     [echo] Resolving Build Target for unit_tests...
+[gettarget] Project Target:   Android 4.1
+[gettarget] API level:        16
+     [echo] ----------
+     [echo] Creating output directories if needed...
+     [echo] ----------
+     [echo] Resolving Dependencies for unit_tests...
+[dependency] Library dependencies:
+[dependency] No Libraries
+[dependency] 
+[dependency] ------------------
+[dependency] API<=15: Adding annotations.jar to the classpath.
+[dependency] WARNING: unable to write jarlist cache file /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/jarlist.cache
+     [echo] ----------
+     [echo] Building Libraries with 'debug'...
+   [subant] No sub-builds to iterate on
+
+-pre-build:
+
+-code-gen:
+[mergemanifest] Found modified input file
+[mergemanifest] Merging AndroidManifest files into one.
+[mergemanifest] Manifest merger disabled. Using project manifest only.
+     [echo] Handling aidl files...
+     [aidl] No AIDL files to compile.
+     [echo] ----------
+     [echo] Handling RenderScript files...
+[renderscript] No RenderScript files to compile.
+     [echo] ----------
+     [echo] Handling Resources...
+     [aapt] Found modified input file
+     [aapt] Generating resource IDs...
+     [echo] ----------
+     [echo] Handling BuildConfig class...
+[buildconfig] No need to generate new BuildConfig.
+
+-pre-compile:
+
+-compile:
+    [javac] Compiling 3 source files to /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/classes
+
+-post-compile:
+     [echo] Copying gdbserver to the apk to enable native debugging
+
+-obfuscate:
+
+-dex:
+      [dex] Found modified input file
+      [dex] Converting compiled files and external libraries into /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/classes.dex...
+
+-crunch:
+   [crunch] Crunching PNG Files in source dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/res
+   [crunch] To destination dir: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/res
+   [crunch] Crunched 0 PNG files to update cache
+
+-package-resources:
+     [aapt] Found modified input file
+     [aapt] Creating full resource package...
+
+-package:
+[apkbuilder] Found modified input file
+[apkbuilder] Creating unit_tests-unsigned.apk for release...
+
+-post-package:
+
+-do-debug:
+     [echo] Signing final apk...
+ [zipalign] Running zip align on final apk...
+     [echo] Release Package: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/unit_tests-debug.apk
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/build.prop
+[propertyfile] Updating property file: /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk/build.prop
+
+-post-build:
+
+debug:
+
+BUILD SUCCESSFUL
+Total time: 24 seconds
+WARNING:root:None
+WARNING:root:COMPLETE.
+[105/106] STAMP obj/build/android_builder_tests.actions_depends.stamp
+[106/106] STAMP obj/build/All.actions_depends.stamp
++ bb_stop_goma_internal
++ echo 'Stopping goma'
+Stopping goma
++ /b/build/goma/goma_ctl.sh stop
+Killing compiler proxy (pid=30534):  http://127.0.0.1:8088 
+done.
++ bb_compile_experimental
++ EXPERIMENTAL_TARGETS=android_experimental
++ for target in '${EXPERIMENTAL_TARGETS}'
++ echo '@@@BUILD_STEP Experimental Compile android_experimental @@@'
+@@@BUILD_STEP Experimental Compile android_experimental @@@
++ set +e
++ [[ ninja = ninja ]]
++ bb_goma_ninja android_experimental
++ echo 'Using ninja to build.'
+Using ninja to build.
++ local TARGET=android_experimental
++ ninja -C out/Debug -j120 -l20 android_experimental
+ninja: Entering directory `out/Debug'
+ninja: warning: multiple rules generate android_webview_test/assets/asset_file.html.svn-base. build will not be correct; continuing anyway
+ninja: error: unknown target 'android_experimental'
++ '[' 1 -ne 0 ']'
++ echo @@@STEP_WARNINGS@@@
+@@@STEP_WARNINGS@@@
++ set -e
++ bb_zip_build
++ echo '@@@BUILD_STEP Zip build@@@'
+@@@BUILD_STEP Zip build@@@
++ python ../../../../scripts/slave/zip_build.py --src-dir /mnt/data/b/build/slave/Android_Builder__dbg_/build/src --exclude-files lib.target,gen,android_webview,jingle_unittests --factory-properties '{"GYP_DEFINES":" component=shared_library","buildtool":"ninja","clobber":false,"target":"Debug","trigger":"android"}' --build-properties '{"blamelist":"gbillock@chromium.org","branch":"src","buildername":"Android Builder (dbg)","buildnumber":"8077","got_revision":"163097","mastername":"chromium.fyi","parent_builddir":"","parent_buildnumber":"","parentname":"","parentslavename":"","revision":"163097","scheduler":"chromium","slavename":"chromeperf35"}'
+Full Staging in /mnt/data/b/build/slave/Android_Builder__dbg_/chrome_staging
+Build Directory /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug
+Zip rules
+  Inclusions: []
+  Exclusions: ['lib.target', 'gen', 'android_webview', 'jingle_unittests', 'appcache', 'glue', 'googleurl', 'lib', 'lib.host', 'obj', 'obj.host', 'obj.target', 'src', '.deps', '.sconsign.dblite', 'mksnapshot']
+  Whitelist regex: '$NO_FILTER^'
+  Blacklist regex: '^.+\.(o|a|d)$'
+
+Actually excluded: [u'obj', u'mksnapshot', u'lib', u'android_webview', u'gen', u'obj.host', u'jingle_unittests']
+
+zip -yr1 /mnt/data/b/build/slave/Android_Builder__dbg_/chrome_staging/full-build-linux.zip full-build-linux
+  adding: full-build-linux/ (stored 0%)
+  adding: full-build-linux/chrome.pak (deflated 54%)
+  adding: full-build-linux/protoc (deflated 66%)
+  adding: full-build-linux/android_webview_test/ (stored 0%)
+  adding: full-build-linux/android_webview_test/AndroidManifest.xml (deflated 58%)
+  adding: full-build-linux/android_webview_test/AndroidWebViewTest.ap_.d (deflated 85%)
+  adding: full-build-linux/android_webview_test/classes.dex.d (deflated 93%)
+  adding: full-build-linux/android_webview_test/AndroidManifest.xml.d (deflated 49%)
+  adding: full-build-linux/android_webview_test/gen/ (stored 0%)
+  adding: full-build-linux/android_webview_test/gen/org/ (stored 0%)
+  adding: full-build-linux/android_webview_test/gen/org/chromium/ (stored 0%)
+  adding: full-build-linux/android_webview_test/gen/org/chromium/android_webview/ (stored 0%)
+  adding: full-build-linux/android_webview_test/gen/org/chromium/android_webview/test/ (stored 0%)
+  adding: full-build-linux/android_webview_test/gen/org/chromium/android_webview/test/BuildConfig.java (deflated 17%)
+  adding: full-build-linux/android_webview_test/gen/org/chromium/android_webview/test/R.java (deflated 57%)
+  adding: full-build-linux/android_webview_test/gen/R.java.d (deflated 81%)
+  adding: full-build-linux/android_webview_test/res/ (stored 0%)
+  adding: full-build-linux/android_webview_test/res/raw/ (stored 0%)
+  adding: full-build-linux/android_webview_test/res/raw/resource_icon.png (stored 0%)
+  adding: full-build-linux/android_webview_test/res/drawable/ (stored 0%)
+  adding: full-build-linux/android_webview_test/res/drawable/resource_icon.png (stored 0%)
+  adding: full-build-linux/android_webview_test/assets/ (stored 0%)
+  adding: full-build-linux/android_webview_test/assets/entries (deflated 47%)
+  adding: full-build-linux/android_webview_test/assets/asset_file.html (deflated 22%)
+  adding: full-build-linux/android_webview_test/assets/asset_file.html.svn-base (stored 0%)
+  adding: full-build-linux/android_webview_test/assets/asset_icon.png (stored 0%)
+  adding: full-build-linux/android_webview_test/assets/asset_icon.png.svn-base (stored 0%)
+  adding: full-build-linux/android_webview_test/classes.dex (deflated 54%)
+  adding: full-build-linux/android_webview_test/build.prop (deflated 33%)
+  adding: full-build-linux/android_webview_test/proguard.txt (deflated 37%)
+  adding: full-build-linux/android_webview_test/AndroidWebViewTest.ap_ (deflated 71%)
+  adding: full-build-linux/android_webview_test/classes/ (stored 0%)
+  adding: full-build-linux/android_webview_test/classes/org/ (stored 0%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/ (stored 0%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/ (stored 0%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ (stored 0%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/TestContentProvider.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$4.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldInterceptRequestTest$TestAwContentsClient$OnLoadResourceHelper.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/TestContentProvider$ColumnIndex.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewLoadUrlTest.class (deflated 56%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ClientAddMessageToConsoleTest$1.class (deflated 57%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$5.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewSynchronousFindApisTest$1.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/UserAgentTest.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldInterceptRequestTest$TestAwContentsClient$ShouldInterceptRequestHelper.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$IntegerFuture.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest$2.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/NavigationHistoryTest.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/LoadDataWithBaseUrlTest$2.class (deflated 50%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$FindResultListener.class (deflated 36%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest$4.class (deflated 50%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest$6.class (deflated 48%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ArchiveTest.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewAsynchronousFindApisTest.class (deflated 63%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ClientOnReceivedErrorTest.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsFileUrlAccessTestHelper.class (deflated 59%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ClientAddMessageToConsoleTest.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/LoadDataWithBaseUrlTest.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest$3.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$1.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsTest$5.class (deflated 50%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest$1.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewModalDialogOverrideTest$4.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$9.class (deflated 45%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$8.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest.class (deflated 67%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest.class (deflated 56%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest$5.class (deflated 48%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewModalDialogOverrideTest$2.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$4.class (deflated 64%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$3.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/R.class (deflated 46%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$1.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest$5.class (deflated 50%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$ViewPair.class (deflated 61%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsTestHelper.class (deflated 65%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$3$1.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/R$drawable.class (deflated 35%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsDefaultFontSizeTestHelper.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewMixedFindApisTest.class (deflated 46%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$5.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase.class (deflated 66%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$4.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewAsynchronousFindApisTest$1.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/R$attr.class (deflated 34%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/GetTitleTest$PageInfo.class (deflated 42%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsTest$3.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$4$1.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsTest$2.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$1.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ClearHistoryTest.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewModalDialogOverrideTest.class (deflated 59%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldIgnoreNavigationTest$1.class (deflated 68%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsContentUrlAccessTestHelper.class (deflated 63%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsTest.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/GetTitleTest.class (deflated 59%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$2.class (deflated 56%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$6.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$8.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$2.class (deflated 47%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$5.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$2.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$3.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$6.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestRunnerApplication.class (deflated 41%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewSynchronousFindApisTest.class (deflated 62%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ArchiveTest$1.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewModalDialogOverrideTest$3.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/BuildConfig.class (deflated 30%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest$4.class (deflated 50%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase.class (deflated 64%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldInterceptRequestTest$TestAwContentsClient.class (deflated 69%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$1.class (deflated 46%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsPluginsTestHelper.class (deflated 59%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$10.class (deflated 46%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsJavaScriptTestHelper.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/R$string.class (deflated 35%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewModalDialogOverrideTest$5.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwTestContainerView$1.class (deflated 32%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsJavaScriptDynamicTestHelper.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/NavigationHistoryTest$1.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsContentUrlAccessFromFileTestHelper.class (deflated 59%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsUserAgentStringTestHelper.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$7.class (deflated 56%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$7.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldIgnoreNavigationTest.class (deflated 62%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsStandardFontFamilyTestHelper.class (deflated 61%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsTest$1.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwTestContainerView$InternalAccessAdapter.class (deflated 65%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwTestContainerView.class (deflated 66%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsFileAccessFromFilesXhrTestHelper.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsLoadImagesAutomaticallyTestHelper.class (deflated 62%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldInterceptRequestTest.class (deflated 57%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest$1.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$3.class (deflated 65%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwTestResourceProvider.class (deflated 44%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestRunnerActivity.class (deflated 47%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsWithSettingsTestHelper.class (deflated 61%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest$7.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldIgnoreNavigationTest$TestAwContentsClient.class (deflated 64%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/TestContentProvider$ProviderStateCursor.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewLoadUrlTest$1.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/R$raw.class (deflated 37%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsFileAccessFromFilesIframeTestHelper.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsDomStorageEnabledTestHelper.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsTest$4.class (deflated 47%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest$2.class (deflated 52%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ArchiveTest$2.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest$7.class (deflated 50%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AndroidWebViewTestBase$9.class (deflated 57%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/LoadDataWithBaseUrlTest$1.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewZoomTest$11.class (deflated 46%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwContentsClientShouldIgnoreNavigationTest$TestAwContentsClient$ShouldIgnoreNavigationHelper.class (deflated 59%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest$6.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/HttpAuthDatabaseTest.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsUniversalAccessFromFilesTestHelper.class (deflated 60%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/TestAwContentsClient.class (deflated 67%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/TestAwContentsClient$AddMessageToConsoleHelper.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/AwSettingsTest$AwSettingsDefaultTextEncodingTestHelper.class (deflated 61%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/ (stored 0%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/JSUtils$1.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/CommonResources.class (deflated 47%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/JSUtils.class (deflated 59%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/ImagePageGenerator.class (deflated 39%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/TestWebServer$Response.class (deflated 46%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/TestWebServer$ServerThread.class (deflated 40%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/JSUtils$3.class (deflated 56%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/TestWebServer$TestHostnameVerifier.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/TestWebServer$1.class (deflated 30%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/TestWebServer.class (deflated 55%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/JSUtils$2.class (deflated 53%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/util/TestWebServer$TestTrustManager.class (deflated 57%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewModalDialogOverrideTest$1.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/WebViewFindApisTestBase$2.class (deflated 54%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ContentViewMiscTest.class (deflated 58%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/CookieManagerTest$3.class (deflated 51%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/ClientOnPageFinishedTest.class (deflated 56%)
+  adding: full-build-linux/android_webview_test/classes/org/chromium/android_webview/test/NullContentsClient.class (deflated 64%)
+  adding: full-build-linux/test.lib.java/ (stored 0%)
+  adding: full-build-linux/test.lib.java/ContentShellTest.jar (deflated 11%)
+  adding: full-build-linux/test.lib.java/AndroidWebViewTest.jar (deflated 11%)
+  adding: full-build-linux/test.lib.java/ChromiumTestShellTest.jar (deflated 10%)
+  adding: full-build-linux/content_unittests_apk/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/AndroidManifest.xml (deflated 53%)
+  adding: full-build-linux/content_unittests_apk/classes.dex.d (deflated 87%)
+  adding: full-build-linux/content_unittests_apk/manifest/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/manifest/AndroidManifest.xml (deflated 53%)
+  adding: full-build-linux/content_unittests_apk/AndroidManifest.xml.d (deflated 53%)
+  adding: full-build-linux/content_unittests_apk/native_test_apk.xml (deflated 56%)
+  adding: full-build-linux/content_unittests_apk/content_unittests.ap_.d (deflated 72%)
+  adding: full-build-linux/content_unittests_apk/gen/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/gen/org/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/gen/org/chromium/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/gen/org/chromium/native_test/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/gen/org/chromium/native_test/BuildConfig.java (deflated 16%)
+  adding: full-build-linux/content_unittests_apk/gen/org/chromium/native_test/R.java (deflated 49%)
+  adding: full-build-linux/content_unittests_apk/gen/R.java.d (deflated 69%)
+  adding: full-build-linux/content_unittests_apk/res/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/res/values/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/res/values/strings.xml (deflated 31%)
+  adding: full-build-linux/content_unittests_apk/classes.dex (deflated 52%)
+  adding: full-build-linux/content_unittests_apk/content_unittests.ap_ (deflated 27%)
+  adding: full-build-linux/content_unittests_apk/content_unittests-debug.apk (deflated 2%)
+  adding: full-build-linux/content_unittests_apk/libs/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/libs/armeabi-v7a/ (stored 0%)
+  adding: full-build-linux/content_unittests_apk/libs/armeabi-v7a/libcontent_unittests.sod

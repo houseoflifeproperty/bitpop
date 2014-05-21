@@ -1,0 +1,30 @@
+Commit queue master process scripts.
+
+This script requires privileged access to be able to impersonate svn
+credentials. When it detects it's not run on the main server, it will run in
+'dry run' mode where it has no effect; it doesn't modify issues on rietveld or
+commit patches.
+
+
+Design overview:
+
+The commit queue process runs a tight loop that does 2 things in parallel:
+- Scans for new reviews on a rietveld instance with commit bit (c+) set and
+  enqueue these to the commit queue.
+- Manages the pending entries in the commit queue by testing each item
+  independently and committing as soon as all the signals for a specific review
+  are green.
+
+The life of a pending commit is:
+- If any of the following steps fail; mark the review c-, remove from the queue
+  and add a comment on the review.
+  - Run presubmit scripts and make sure there is a LGTM from a valid reviewer.
+  - Send the patch to the try server on relevant builders and run relevant
+    tests.
+  - Wait for all try jobs completes and be green.
+  - Sync local checkout to HEAD.
+  - Apply the patch.
+  - Commit as the user.
+
+Each verification step is done through a Verifier plug-in. Every Verifier is a
+single python file in verifications/.

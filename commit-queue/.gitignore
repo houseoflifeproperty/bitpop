@@ -1,0 +1,5 @@
+*.pyc
+/subversion_config/README.txt
+/subversion_config/auth
+/subversion_config/servers
+/workdir/*

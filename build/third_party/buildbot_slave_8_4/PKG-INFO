@@ -1,0 +1,16 @@
+Metadata-Version: 1.0
+Name: buildbot-slave
+Version: 0.8.4
+Summary: BuildBot Slave Daemon
+Home-page: http://buildbot.net/
+Author: Dustin J. Mitchell
+Author-email: dustin@v.igoro.us
+License: GNU GPL
+Description: See the 'buildbot' package for details
+Platform: UNKNOWN
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: No Input/Output (Daemon)
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU General Public License (GPL)
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: Topic :: Software Development :: Testing

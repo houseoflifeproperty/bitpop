@@ -1,0 +1,457 @@
+{% extends "layout.html" %}
+
+{% block header -%}
+{{ super() }}
+<hr/>
+<script>
+  /**
+   * Pseudo namespace for chromium - keep it short because we are in a very
+   * narrow scope for this file.
+   * @type {Object}
+   */
+  var c = {};
+
+  /**
+   * Replaces html references with anchor tags to the same.
+   * @param {String} className CSS class to operate on.
+   */
+  function autoLink(className) {
+    var comments = document.querySelectorAll(className);
+    for(var i = 0; i < comments.length; i++) {
+      comments[i].innerHTML = comments[i].innerHTML.replace(
+          /https?:\/\/[^ \t\n<]*/g, '<a href="$&">$&</a>');
+    }
+  };
+
+  window.addEventListener("load", function() {
+    autoLink('.DevComment');
+  }, false);
+
+  /**
+   * This is the indicator for whether we are in console or waterfall
+   * mode, or some future resource.
+   * @type {String}
+   */
+  c.viewtype = location.pathname.split('/').slice(-1);
+
+  /**
+   * Returns a search string portion including marker, or an empty string.
+   * optional.
+   * @param {String} opt_s A search string, or some form of emptiness.
+   * @returns {!String}
+   */
+  function search(opt_s) {
+    return opt_s ? '?' + opt_s.replace(/^[?]/, '') : '';
+  };
+
+  /**
+   * Replicates a string.
+   * @param {Number} i A whole number of repetitions.
+   * @param {String} x The string to be repeated.
+   * @returns {!String}
+   */
+  function repeat(i, x){
+    var t = ''
+    for (j = 0; j < i; j++) { t += x; }
+    return t;
+  };
+
+  /**
+   * A simple HTML table string.
+   * @param {String} attributes A set of HTML attributes for the table.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function table(attributes, contents) {
+      return '<table ' + attributes + '>' + contents + '</table>\n';
+  };
+
+  /**
+   * A simple HTML div string.
+   * @param {String} attributes A set of HTML attributes for the div.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function div(attributes, contents) {
+    return '<div ' + attributes + '>' + contents + '</div>';
+  };
+
+  /**
+   * A simple HTML table row string.
+   * @param {String} attributes A set of HTML attributes for the table row.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function tr(contents) {
+    return '<tr>' + contents + '</tr>\n';
+  };
+
+  /**
+   * A simple HTML table cell string.
+   * @param {String} attributes A set of HTML attributes for the table cell.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function td(attributes, contents) {
+    return '<td ' + attributes + '>' + contents + '</td>';
+  };
+
+  /**
+   * A simple HTML anchor string.
+   * @param {String} url The value for the href.
+   * @param {String} attributes A set of HTML attributes for the table.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function a(url, contents, attributes) {
+    return '<a href="' + url + '" ' + attributes + '>' + contents + '</a>';
+  };
+
+  /**
+   * Gives an HTML anchor string to the specified URL, but of the same view
+   * type as the current page.
+   * @param {String} url The URL portion up to the view.
+   * @param {String} search_opt A the query portion.
+   * @param {String} contents The contents for the tag.
+   * @returns {!String}
+   */
+  function aView(url, search_opt, contents) {
+      return a((url ? url + '/' : '') + c.viewtype + search(search_opt),
+               contents, '')
+  };
+
+  /**
+   * A simple HTML iframe string.
+   * @param {String} attributes A set of HTML attributes for the table.
+   * @param {String} url The source of the iframe.
+   * @returns {!String} the iframe or an empty string if noframe is specified.
+   */
+  function iFrame(attributes, url) {
+      if (window.location.href.search('noframe') == -1) {
+          return '<iframe ' + attributes + ' src="' + url + '"></iframe>';
+      }
+      return ''
+  };
+</script>
+
+<div class="Announcement">
+
+<iframe width="100%" height="44" frameborder="0" scrolling="no" src="http://chromium-status.appspot.com/current"></iframe>
+
+<center style="padding: 0 7px">
+  <table width="100%" valign="top" bgcolor="#efefef" style="-webkit-border-bottom-left-radius: 24px; -webkit-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px;   box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6); -moz-box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6); -webkit-box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6);">
+    <tr>
+      <td width="29%">
+        <table valign="top" width="100%">
+          <tr>
+            <td style="text-align: right;">
+              <b>Builds:</b>
+            </td>
+            <td>
+              <a href="http://commondatastorage.googleapis.com/chromium-browser-continuous/index.html">continuous</a> |
+              <a href="http://build.chromium.org/f/chromium/symsrv/index.html">symbols</a> |
+              <a href="http://chromium-status.appspot.com">status</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+              <b>Dashboards:</b>
+            </td>
+            <td>
+              <a href="http://build.chromium.org/f/chromium/perf/dashboard/overview.html">perf</a> |
+              <a href="http://build.chromium.org/f/chromium/perf/dashboard/memory.html">memory</a> |
+              <a href="http://build.chromium.org/f/chromium/perf/dashboard/sizes.html">sizes</a> |
+              <a href="http://build.chromium.org/f/chromium/coverage/">coverage</a> |
+              <a href="http://build.chromium.org/f/chromium/flakiness/">flakiness</a> |
+              <a href="http://build.chromium.org/p/chromium/stats">stats</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+              <b>Chromium:</b>
+            </td>
+            <td>
+              <a href="http://src.chromium.org/viewvc/chrome">sources</a> |
+              <a href="http://codereview.chromium.org/">reviews</a> |
+              <a href="http://code.google.com/p/chromium/issues/list?can=2&q=&sort=pri+mstone&colspec=ID%20Stars%20Pri%20Area%20Type%20Status%20Summary%20Modified%20Owner%20Mstone">bugs</a> |
+              <a href="http://dev.chromium.org/Home">dev</a> |
+              <a href="http://www.google.com/support/chrome/">support</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+               <b>Sheriffs:</b>
+            </td>
+            <td>
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff.js'></script>,<br>
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_memory.js'></script>(Memory),
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_nacl.js'></script>(NaCl),<br>
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_perf.js'></script>(Perf),
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_cros_mtv.js'></script>,
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_cros_nonmtv.js'></script>(CrOS),<br>
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_android.js'></script>(Android),
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_ios_europe.js'></script>,
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_ios_us.js'></script>(iOS),<br>
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_gpu.js'></script>(GPU),<br>
+              <a href="https://www.google.com/calendar/render?cid=google.com_iqfka4i9asiva67vlqqf1es094%40group.calendar.google.com">trooper schedule</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+              <b>Gardeners:</b>
+            </td>
+            <td>
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_webkit.js'></script>(WebKit),
+              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_cr_cros_gardeners.js'></script>
+              (<a href="http://dev.chromium.org/developers/tree-sheriffs/chrome-in-chromeos-gardening">ChromeOS</a>)
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+               <b>Masters:</b>
+            </td>
+            <td colspan="2">
+              <script>
+              document.write([
+                a("../tryserver.chromium/waterfall", "tryserver.chromium", ""),
+                aView("../chromium.fyi", "", "chromium.fyi"),
+                aView("../chromium.memory", "", "chromium.memory"),
+                aView("../chromium.memory.fyi", "", "chromium.memory.fyi"),
+                aView("../chromium.chromiumos", "", "chromium.chromiumos"),
+                aView("../chromiumos", "", "chromiumos"),
+                aView("../client.nacl", "", "client.nacl"),
+                aView("../chromium.webkit", "", "chromium.webkit")].join(' | '));
+              </script>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+               <b>Navigate:</b>
+            </td>
+            <td colspan="2">
+              <script>
+              document.write([
+                a("http://dev.chromium.org/developers/testing/chromium-build-infrastructure/tour-of-the-chromium-buildbot", "about", ""),
+                a("./waterfall/help", "customize", ""),
+                a("./waterfall", "waterfall", ""),
+                a("./console", "console", ""),
+                a("./waterfall?show_events=true&failures_only=true", "failures", "")].join(' | '));
+              </script>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="1" bgcolor="#CCCCCC">
+      </td>
+      <td width="1%">
+      </td>
+      <td width="70%">
+        <table width="100%">
+          <script language="javascript">
+            c.chromium = '';
+            c.win = '';
+            c.mac = '';
+            c.linux = '';
+            c.chromium_chromiumos = '';
+            c.memory = '';
+            c.memory_fyi = '';
+            c.perf = '';
+            c.cros = '';
+            c.chrome = '';
+            c.lkgr = '';
+            c.gpu = '';
+            c.gpu_fyi = '';
+
+            c.status = '../chromium';
+            c.status_win = '../chromium.win';
+            c.status_mac = '../chromium.mac';
+            c.status_linux = '../chromium.linux';
+            c.status_cros = '../chromium.chromiumos';
+            c.status_memory = '../chromium.memory';
+            c.status_memory_fyi = '../chromium.memory.fyi';
+            c.status_chrome = '../chromium.chrome';
+            c.status_perf = '../chromium.perf';
+            c.status_lkgr = '../chromium.lkgr';
+            c.status_gpu = '../chromium.gpu';
+            c.status_gpu_fyi = '../chromium.gpu.fyi';
+
+            /**
+             * Builds a reference for the iframe with boxes.
+             * @param {String} x the name of the waterfall.
+             * @returns {String} The URL.
+             */
+            function BarUrl(x) {
+              return 'http://chromium-build.appspot.com/p/' + x +
+                     '/horizontal_one_box_per_builder';
+            }
+            c.bar = BarUrl('chromium')
+            c.bar_win = BarUrl('chromium.win');
+            c.bar_mac = BarUrl('chromium.mac');
+            c.bar_linux = BarUrl('chromium.linux');
+            c.bar_memory = BarUrl('chromium.memory');
+            c.bar_memory_fyi = BarUrl('chromium.memory.fyi');
+            c.bar_perf = BarUrl('chromium.perf');
+            c.bar_chrome = BarUrl('chromium.chrome');
+            c.bar_lkgr = BarUrl('chromium.lkgr');
+            c.bar_cros = BarUrl('chromium.chromiumos');
+            c.bar_gpu = BarUrl('chromium.gpu');
+            c.bar_gpu_fyi = BarUrl('chromium.gpu.fyi');
+
+
+            /**
+             * Joins URL and search terms.
+             * @param {String} type The Url without the cgi search portion.
+             * @param {String} content The parameters for the sub-selection
+             *                         inside the master.  Optional.
+             * @returns {String} A completed URL.
+             */
+            function GetUrl(type, content) {
+              return type + search(content);
+            }
+
+            /**
+             * Callback to replace the LKGR link with one that identifies
+             * the current revision for the LKGR.
+             */
+            function DisplayLKGR() {
+              var xmlHttp = new XMLHttpRequest();
+              var lkgrPath = c.status_lkgr +
+                             '/json/builders/Linux%20x64/builds/-1?as_text=1';
+              var lkgrLink = document.getElementById('LKGRLink');
+              xmlHttp.open('GET', lkgrPath, false);
+              xmlHttp.send(null);
+              if (xmlHttp.readyState == 4 && xmlHttp.status == 200) {
+                var buildData;
+                if (typeof (JSON) !== 'undefined' &&
+                    typeof (JSON.parse) === 'function') {
+                  buildData = JSON.parse(xmlHttp.responseText);
+                } else {
+                  buildData = eval('(' + xmlHttp.responseText + ')');
+                }
+                var properties = buildData['properties'];
+                for (var i = 0; i < properties.length; i++) {
+                  if (properties[i][0] == 'got_revision') {
+                    lkgrLink.innerHTML = 'LKGR<br>(' + properties[i][1] + ')';
+                    return;
+                  }
+                }
+              }
+            }
+
+            c.default_iframe_properties = [
+                'width="100%"',
+                'height="20"',
+                'frameborder="0"',
+                'scrolling="no"',
+            ].join(' ');
+
+            /**
+             * The most detailed specification of a builder bar with boxes.
+             * Reutrns an HTMLstring with 2 <td>s
+             * @param {String} status_url URL portion for the title link.
+             * @param {String} bar_url URL portion for the array of boxes.
+             * @param {String} content specification for the references, e.g..
+             * @param {String} name what to call this bar.
+             * @param {String} bar_properties extra attributes for the array
+             *                 of boxes portion.
+             * @param {String} link_properties extra attributes for the name
+             *                 portion that is a link.
+             * @returns {String}
+             */
+            function HTMLBaseBar(status_url, bar_url, content, name,
+                                 bar_properties, link_properties) {
+              return td('',
+                        a(GetUrl(status_url, content), name,
+                          link_properties)) +
+                     td(bar_properties,
+                        iFrame(c.default_iframe_properties,
+                               GetUrl(bar_url, content)));
+            }
+
+            /**
+             * The more common specification of a builder bar with boxes.
+             * Presume to take an entire row.
+             * @param {String} status_url URL portion for the title link.
+             * @param {String} bar_url URL portion for the array of boxes.
+             * @param {String} content specification for the references, e.g..
+             * @param {String} name what to call this bar.
+             * @returns {String}
+             */
+            function HTMLBar(status_url, bar_url, content, name) {
+              return tr(HTMLBaseBar(status_url, bar_url, content, name,
+                                    'width="99%" colspan=9', ''));
+            }
+
+            /**
+             * A specification of a builder bar with boxes, which is one of
+             * multiple in a row.
+             * Note that since these are elements of a table, percents
+             * can be irrelevant to the final layout.
+             * @param {String} status_url URL portion for the title link.
+             * @param {String} bar_url URL portion for the array of boxes.
+             * @param {String} content specification for the references, e.g..
+             * @param {String} name what to call this bar.
+             * @param {String} pc percent of the line to allocat to the boxes.
+             * @returns {String}
+             */
+            function HTMLSubBar(status_url, bar_url, content, name, pc) {
+              return HTMLBaseBar(status_url, bar_url, content, name,
+                                 'width="' + pc + '"', '');
+            }
+
+            document.write(tr(td(
+                'colspan=10 width="99%"',
+                div(
+                  'class="closerbox" width="100%"',
+                  div('class="title" width="100%" height="10px"',
+                      a('http://chromium-status.appspot.com', 'Tree closers')) +
+                  table(
+                    'width="100%"',
+                    tr(
+                       HTMLBaseBar(c.status, c.bar, c.chromium, 'Chromium',
+                                   'width="8%"') +
+                       HTMLBaseBar(c.status_win, c.bar_win, c.win, 'Win',
+                                   'width="42%"') +
+                       HTMLBaseBar(c.status_mac, c.bar_mac, c.mac, 'Mac',
+                                   'width="30%"') +
+                       HTMLBaseBar(c.status_linux, c.bar_linux, c.linux,
+                                   'Linux', 'width="20%"')) +
+                    tr(HTMLBaseBar(c.status_cros, c.bar_cros, c.cros,
+                                  'ChromiumOS', 'width="50%" colspan=3') +
+                       HTMLSubBar(c.status_chrome, c.bar_chrome, c.chrome,
+                                  'Official', '30%') +
+                       HTMLSubBar(c.status_memory, c.bar_memory, c.memory,
+                                  'Memory', '20%')))))));
+
+            document.write(tr(
+                HTMLBaseBar(c.status_perf, c.bar_perf, c.perf,
+                            'Perf', 'width="75%"', '') +
+                HTMLBaseBar(c.status_lkgr, c.bar_lkgr, c.lkgr,
+                            'LKGR', 'width="25%"', 'id="LKGRLink"')));
+
+            document.write(tr(
+                HTMLBaseBar(c.status_memory_fyi, c.bar_memory_fyi, c.memory_fyi,
+                           'Memory<br>FYI', 'width="100%" colspan=6', '')));
+
+            document.write(tr(
+                HTMLBaseBar(c.status_gpu, c.bar_gpu, c.gpu,
+                           'GPU', 'width="75%"', '') +
+                HTMLBaseBar(c.status_gpu_fyi, c.bar_gpu_fyi, c.gpu_fyi,
+                           'GPU FYI', 'width="25%"', '')));
+
+            setTimeout('DisplayLKGR()', 100);
+          </script>
+        </table>
+      </td>
+    </tr>
+  </table>
+</center>
+
+</div>
+{% endblock header %}
+
+{% block footer %}
+
+{{ super() }}
+{# <p>Debug info: {{ debuginfo }}</p> #}
+{% endblock %}
