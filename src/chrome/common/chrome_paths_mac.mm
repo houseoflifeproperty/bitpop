@@ -75,7 +75,7 @@ const char* ProductDirNameInternal() {
 #if defined(GOOGLE_CHROME_BUILD)
     product_dir_name = "Google/Chrome";
 #else
-    product_dir_name = "Chromium";
+    product_dir_name = "BitPop";
 #endif
   }
 

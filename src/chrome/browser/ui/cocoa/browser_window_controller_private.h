@@ -72,6 +72,15 @@
 // Lays out the bookmark at the bottom of the content area.
 - (void)layoutBottomBookmarkBarInContentFrame:(NSRect)contentFrame;
 
+// returns new maxX
+- (CGFloat)layoutFriendsSidebarAtMaxX:(CGFloat)maxX
+                                 minY:(CGFloat)minY
+                                 maxY:(CGFloat)maxY;
+
+- (CGFloat)layoutChatbarAtMinX:(CGFloat)minX
+                          minY:(CGFloat)minY
+                         width:(CGFloat)width;
+
 // Lay out the view which draws the background for the floating bar when in
 // presentation mode, with the given frame and presentation-mode-status. Should
 // be called even when not in presentation mode to hide the backing view.

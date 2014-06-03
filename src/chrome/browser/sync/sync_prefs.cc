@@ -56,6 +56,7 @@ void SyncPrefs::ClearPreferences() {
   pref_service_->ClearPref(prefs::kSyncEncryptionBootstrapToken);
   pref_service_->ClearPref(prefs::kSyncKeystoreEncryptionBootstrapToken);
 
+  pref_service_->ClearPref(prefs::kShouldNotEncrypt);
   // TODO(nick): The current behavior does not clear
   // e.g. prefs::kSyncBookmarks.  Is that really what we want?
 }
@@ -378,6 +379,11 @@ void SyncPrefs::RegisterPreferences() {
   pref_service_->RegisterListPref(prefs::kSyncAcknowledgedSyncTypes,
                                   syncer::ModelTypeSetToValue(model_set),
                                   PrefService::UNSYNCABLE_PREF);
+
+  // BITPOP mod: preference for faster startup (do not sync sensitive data)
+  pref_service_->RegisterBooleanPref(prefs::kShouldNotEncrypt,
+                                     true,
+                                     PrefService::UNSYNCABLE_PREF);
 }
 
 void SyncPrefs::RegisterDataTypePreferredPref(syncer::ModelType type,
@@ -433,6 +439,20 @@ syncer::ModelTypeSet SyncPrefs::ResolvePrefGroups(
   }
   types_with_groups.RetainAll(registered_types);
   return types_with_groups;
+}
+
+// BITPOP mod: kShouldNotEncrypt pref support
+bool SyncPrefs::ShouldUseEncryption() const {
+  DCHECK(CalledOnValidThread());
+  return
+      pref_service_ &&
+      !pref_service_->GetBoolean(prefs::kShouldNotEncrypt);
+}
+
+void SyncPrefs::SetShouldUseEncryption(bool should_use_encryption) {
+  DCHECK(CalledOnValidThread());
+  CHECK(pref_service_);
+  pref_service_->SetBoolean(prefs::kShouldNotEncrypt, !should_use_encryption);
 }
 
 }  // namespace browser_sync

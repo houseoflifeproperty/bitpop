@@ -7,6 +7,7 @@
 #include "chrome/browser/accessibility/accessibility_extension_api.h"
 #include "chrome/browser/bookmarks/bookmark_manager_extension_api.h"
 #include "chrome/browser/extensions/api/app/app_api.h"
+#include "chrome/browser/extensions/api/bitpop/bitpop_api.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api.h"
 #include "chrome/browser/extensions/api/browsing_data/browsing_data_api.h"
 #include "chrome/browser/extensions/api/cloud_print_private/cloud_print_private_api.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/extensions/api/extension_action/extension_browser_actions_api.h"
 #include "chrome/browser/extensions/api/extension_action/extension_page_actions_api.h"
 #include "chrome/browser/extensions/api/extension_action/extension_script_badge_api.h"
+#include "chrome/browser/extensions/api/facebook_chat/facebook_chat_api.h"
 #include "chrome/browser/extensions/api/font_settings/font_settings_api.h"
 #include "chrome/browser/extensions/api/history/history_api.h"
 #include "chrome/browser/extensions/api/identity/identity_api.h"
@@ -504,6 +506,19 @@ void ExtensionFunctionRegistry::ResetFunctions() {
   RegisterFunction<extensions::RuntimeGetBackgroundPageFunction>();
   RegisterFunction<extensions::RuntimeReloadFunction>();
   RegisterFunction<extensions::RuntimeRequestUpdateCheckFunction>();
+
+  // BitPop
+  RegisterFunction<BitpopGetSyncStatusFunction>();
+  RegisterFunction<BitpopLaunchFacebookSyncFunction>();
+
+  // Facebook chat
+  RegisterFunction<GetFriendsSidebarVisibleFunction>();
+  RegisterFunction<SetFriendsSidebarVisibleFunction>();
+  RegisterFunction<AddChatFunction>();
+  RegisterFunction<NewIncomingMessageFunction>();
+  RegisterFunction<LoggedOutFacebookSessionFunction>();
+  RegisterFunction<LoggedInFacebookSessionFunction>();
+  RegisterFunction<SetGlobalMyUidForProfileFunction>();
 
   // Generated APIs
   extensions::api::GeneratedFunctionRegistry::RegisterAll(this);

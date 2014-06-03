@@ -94,10 +94,10 @@
             # The policy .grd file also needs the bundle id.
             'grit_defines': ['-D', 'mac_bundle_id=com.google.Chrome'],
           }, {  # else: branding!="Chrome"
-            'mac_bundle_id': 'org.chromium.Chromium',
+            'mac_bundle_id': 'com.houseoflifepropertyltd.BitPop',
             'mac_creator': 'Cr24',
             # The policy .grd file also needs the bundle id.
-            'grit_defines': ['-D', 'mac_bundle_id=org.chromium.Chromium'],
+            'grit_defines': ['-D', 'mac_bundle_id=com.houseoflifepropertyltd.BitPop'],
           }],  # branding
         ],  # conditions
       }],  # OS=="mac"
@@ -161,12 +161,21 @@
           'target_name': 'default_extensions',
           'type': 'none',
           'conditions': [
-            ['OS=="win"', {
+            ['OS=="win" or OS=="mac"', {
               'copies': [
                 {
                   'destination': '<(PRODUCT_DIR)/extensions',
                   'files': [
-                    'browser/extensions/default_extensions/external_extensions.json'
+                    'browser/extensions/default_extensions/external_extensions.json',
+                    'browser/extensions/default_extensions/dropdown_most_visited.crx',
+                    'browser/extensions/default_extensions/share_button.crx',
+                    'browser/extensions/default_extensions/facebook_friends.crx',
+                    'browser/extensions/default_extensions/facebook_messages.crx',
+                    'browser/extensions/default_extensions/facebook_notifications.crx',
+                    'browser/extensions/default_extensions/uncensor_domains.crx',
+                    'browser/extensions/default_extensions/uncensor_proxy.crx',
+                    'browser/extensions/default_extensions/bittorrent_surf.crx',
+                    'browser/extensions/default_extensions/share_this.crx',
                   ]
                 }
               ],
@@ -608,13 +617,51 @@
               ['branding=="Chrome"', {
                 'dmg_name': 'GoogleChrome.dmg',
               }, { # else: branding!="Chrome"
-                'dmg_name': 'Chromium.dmg',
+                'dmg_name': 'BitPop.dmg',
               }],
             ],
           },
+          'conditions': [
+            ['buildtype=="Official"', {
+              'dependencies': ['installer_packaging'],
+              'variables': {
+                'mac_packaging_dir':
+                    '<(PRODUCT_DIR)/<(mac_product_name) Packaging',
+                'sign_app_script_path': '<(mac_packaging_dir)/sign_app.sh',
+                'sign_versioned_dir_script_path': '<(mac_packaging_dir)/sign_versioned_dir.sh',
+                'codesign_id': 'House of Life',
+                'codesign_keychain': 'login.keychain',
+              },
+              'actions': [
+                {
+                  'action_name': 'Sign versioned directory',
+                  'inputs': ['<(sign_versioned_dir_script_path)', '<(PRODUCT_DIR)/<(mac_product_name).app', ],
+                  'outputs': ['<(PRODUCT_DIR)/mark1'],
+                  'action': [
+                    '<(sign_versioned_dir_script_path)',
+                    '<(PRODUCT_DIR)/<(mac_product_name).app',
+                    '<(codesign_keychain)',
+                    '<(codesign_id)',
+                  ],
+                },
+                {
+                  'action_name': 'Sign application',
+                  'inputs': ['<(sign_app_script_path)', '<(PRODUCT_DIR)/<(mac_product_name).app', '<(PRODUCT_DIR)/mark1',],
+                  'outputs': ['<(PRODUCT_DIR)/mark2'],
+                  'action': [
+                    '<(sign_app_script_path)',
+                    '<(PRODUCT_DIR)/<(mac_product_name).app',
+                    '<(codesign_keychain)',
+                    '<(codesign_id)',
+                  ],
+                },
+              ],
+            },],
+          ],
           'actions': [
             {
               'inputs': [
+                '<(PRODUCT_DIR)/mark2',
                 '<(build_app_dmg_script_path)',
                 '<(pkg_dmg_script_path)',
                 '<(PRODUCT_DIR)/<(mac_product_name).app',

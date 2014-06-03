@@ -201,6 +201,20 @@
     </div>
   </section>
 </if>  <!-- not pp_ifdef('chromeos') -->
+<if expr="is_macosx">
+  <section>
+    <h3 i18n-content="checkForUpdateGroupName"></h3>
+    <div>
+      <div class="checkbox">
+        <label>
+          <input type="checkbox" id="autoCheckCheckbox"
+              pref="automatic_updates.enabled">
+          <span i18n-content="updatesAutoCheckDaily"></span>
+        </label>
+      </div>
+    </div>
+  </section>
+</if>
 <div id="advanced-settings" hidden>
 <div id="advanced-settings-container">
 <if expr="pp_ifdef('chromeos')">
@@ -461,6 +475,12 @@
 <if expr="not pp_ifdef('chromeos')">
   <section id="network-section">
     <h3 i18n-content="advancedSectionTitleNetwork"></h3>
+    <div class="checkbox">
+      <label>
+        <input id="useBitpopProxy" type="checkbox">
+        <span i18n-content="useBitpopProxyPref"></span>
+      </label>
+    </div>
     <div>
       <span id="proxiesLabel" class="settings-row"></span>
       <div class="settings-row">

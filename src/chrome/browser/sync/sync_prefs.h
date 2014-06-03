@@ -74,6 +74,9 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   bool HasKeepEverythingSynced() const;
   void SetKeepEverythingSynced(bool keep_everything_synced);
 
+  bool ShouldUseEncryption() const;
+  void SetShouldUseEncryption(bool should_use_encryption);
+
   // The returned set is guaranteed to be a subset of
   // |registered_types|.  Returns |registered_types| directly if
   // HasKeepEverythingSynced() is true.

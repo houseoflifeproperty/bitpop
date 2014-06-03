@@ -18,8 +18,8 @@ namespace app_host {
 
 namespace {
 
-const wchar_t kAppHostAppId[] = L"{FDA71E6F-AC4C-4a00-8B70-9958A68906BF}";
-const wchar_t kBinariesAppId[] = L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}";
+const wchar_t kAppHostAppId[] = L"{030FD373-FCBE-412C-AE78-5FD34788F153}";
+const wchar_t kBinariesAppId[] = L"{B2A30819-3DA9-44A4-93AC-E02724D3BFA0}";
 const int kInstallationPollingIntervalMs = 50;
 
 HRESULT CreateInstalledApp(IAppBundle* app_bundle,

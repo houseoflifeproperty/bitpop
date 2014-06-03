@@ -954,7 +954,7 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         </message>
       </if>
       <message name="IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_TEXT" desc="The text of a bubble that confirms users allows integrating the spelling service of Google to Chrome.">
-        Google Chrome can provide smarter spell-checking by sending what you type in the browser to Google servers, allowing you to use the same spell-checking technology used by Google search.
+        BitPop can provide smarter spell-checking by sending what you type in the browser to Google servers, allowing you to use the same spell-checking technology used by Google search.
       </message>
 
       <!-- Spelling submenu -->
@@ -1404,6 +1404,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_EXIT" desc="The text label of the Exit menu item">
           E&amp;xit
         </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="Title of menu item starting update check.">
+          Check for updates...
+        </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_SHOW_HISTORY" desc="In Title Case: The show history menu in the app menu">
@@ -1444,6 +1447,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         </message>
         <message name="IDS_EXIT" desc="In Title Case: The text label of the Exit menu item">
           E&amp;xit
+        </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="In Title Case: Title of menu item starting update check.">
+          Check For Updates...
         </message>
       </if>
       <if expr="pp_ifdef('chromeos')">
@@ -5635,7 +5641,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
           App Launcher
         </message>
         <message name="IDS_SETTINGS_APP_SYNC_OVERVIEW" desc="The message that appears in the non-browser Settings App when sync has not been set up by the user.">
-          Sign in with your Google Account to allow apps to synchronize settings and provide other customized services.
+          Sign in with your BitPop Account to allow apps to synchronize settings and provide other customized services.
         </message>
         <message name="IDS_SETTINGS_APP_HANDLERS_ALLOW_RADIO" desc="A radio button in the Content Settings dialog within the non-browser Settings App for allowing apps to register themselves as handlers for protocols.">
           Allow apps to ask to become default handlers for protocols (recommended)
@@ -7847,7 +7853,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
 
       <message name="IDS_IMPORTER_GOOGLE_LOGIN_TEXT" desc="The message to be displayed on dialog">
-        In order to import Toolbar bookmarks into Chrome, you must be signed in to your Google account.  Please sign in and try to import again.
+        In order to import Toolbar bookmarks into BitPop, you must be signed in to your Facebook account.  Please sign in and try to import again.
       </message>
       <message name="IDS_IMPORT_NO_PROFILE_FOUND" desc="Message displayed when we do not find any supported browser to import from.">
         No supported browser found
@@ -7956,7 +7962,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         (Go back to original screenshot)
       </message>
       <message name="IDS_FEEDBACK_ATTACH_FILE_NOTE" desc="Text for describing the maximum size for an attached file">
-        The attached file is uploaded to Google servers for debugging.&lt;br&gt;
+        The attached file is uploaded to BitPop servers for debugging.&lt;br&gt;
         Note: You can attach one file per feedback report (3 MB limit)
       </message>
       <message name="IDS_FEEDBACK_READING_FILE" desc="Text to display if reading a file when the user clicks the send report button">
@@ -7966,13 +7972,13 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Selected file is too big.
       </message>
       <message name="IDS_FEEDBACK_PRIVACY_NOTE" desc="Text for the privacy note included with Chrome OS">
-        Your Chrome and Operating system version will be submitted in addition
+        Your BitPop and Operating system version will be submitted in addition
         to any information you choose to include above. This feedback is used to
-        diagnose problems and help improve Chrome. Any personal information you
+        diagnose problems and help improve BitPop. Any personal information you
         submit, whether explicitly or incidentally will be protected in
         accordance with our privacy policies.<ph name="BEGIN_BOLD">&lt;strong&gt;
-        </ph> By submitting this feedback, you agree that Google may use feedback
-        that you provide to improve any Google product or service.
+        </ph> By submitting this feedback, you agree that House of Life may use feedback
+        that you provide to improve any House of Life product or service.
         <ph name="END_BOLD">&lt;/strong&gt;</ph>
       </message>
       <message name="IDS_FEEDBACK_INCLUDE_NEW_SCREEN_IMAGE" desc="Radio button for including a new screen image on the bug report dialog box">
@@ -10131,7 +10137,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
           Set <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> as my default browser
         </message>
         <message name="IDS_FIRSTRUN_DLG_MAC_OPTIONS_SEND_USAGE_STATS_LABEL" desc="Label for checkbox to ask whether to send usage stats to Google">
-          Help make <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> better by automatically sending usage statistics and crash reports to Google
+          Help make <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> better by automatically sending usage statistics and crash reports to House of Life
         </message>
         <message name="IDS_FIRSTRUN_DLG_MAC_START_CHROME_BUTTON" desc="Button to Start Google Chrome">
           Start <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
@@ -10144,7 +10150,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
           Take a tour
         </message>
         <message name="IDS_FIRSTRUN_SIGNED_IN" desc="Message informing the user that they are now signed in and sync is turned on.">
-          You are now signed in to Chrome. Your open tabs, bookmarks and omnibox data are being synced with your Google Account.
+          You are now signed in to Chrome. Your open tabs, bookmarks and omnibox data are being synced with your Facebook/BitPop Account.
         </message>
         <message name="IDS_FIRSTRUN_SETTINGS_LINK" desc="Link to take user to Chrome's settings menu.">
           Settings
@@ -10248,6 +10254,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_OPTIONS_ADVANCED_TAB_LABEL" desc="The title of the Under the Hood tab">
         Under the hood
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_TAB_LABEL" desc="The title of the Uncensor filter extension settings tab">
+        Uncensor Filter
       </message>
       <message name="IDS_OPTIONS_TAB_TITLE" desc="The format of the title on the browser tab for an options subpage, e.g. Settings - Basics">
         <ph name="OPTIONS_TITLE">$1<ex>Settings</ex></ph> - <ph name="SUBPAGE_TITLE">$2<ex>Under the Hood</ex></ph>
@@ -10467,6 +10476,22 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           Launch <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> automatically when I start my computer
         </message>
       </if>
+      <!-- House of Life browser additions -->
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="The title of the check for update group">
+          Check for update
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="In Title Case: The title of the check for update group">
+          Check For Update
+        </message>
+      </if>
+      <message name="IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL" desc="The label for automatic updates checkbox">
+        Automatically check daily
+      </message>
+      <!-- end of Tree of life browser options -->
+
       <message name="IDS_OPTIONS_DEFAULTBROWSER_USEASDEFAULT" desc="The label of the 'Use Chrome as default' browser button">
         Make <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> my default browser
       </message>
@@ -11079,7 +11104,7 @@ experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
         Undo
       </message>
       <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE" desc="The message of the one click sign in dialog.">
-        Signing in will sync your data with your Google Account so you can access your bookmarks, history, and other settings on any device.
+        Signing in will sync your data with your Facebook/BitPop Account so you can access your bookmarks, history, and other settings on any device.
       </message>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_OK_BUTTON" desc="In Title Case: The text of the OK button of the one click sign in dialog.">
@@ -11884,7 +11909,7 @@ experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
           <ph name="HOST_NAME">&lt;strong&gt;$1<ex>www.malware.com</ex>&lt;/strong&gt;</ph> contains malware. Your computer might catch a virus if you visit this site.
         </message>
         <message name="IDS_SAFE_BROWSING_MALWARE_DESCRIPTION2" desc="SafeBrowsing Malware HTML description, second line">
-          Google has found malicious software may be installed onto your computer if you proceed. If you've visited this site in the past or you trust this site, it's possible that it has just recently been compromised by a hacker. You should not proceed, and perhaps try again tomorrow or go somewhere else.
+          BitPop has found malicious software may be installed onto your computer if you proceed. If you've visited this site in the past or you trust this site, it's possible that it has just recently been compromised by a hacker. You should not proceed, and perhaps try again tomorrow or go somewhere else.
         </message>
         <message name="IDS_SAFE_BROWSING_MALWARE_DESCRIPTION3" desc="SafeBrowsing Malware HTML description, last line">
           If you understand that visiting this site may harm your computer, <ph name="PROCEED_LINK">$1<ex>proceed anyway</ex></ph>.
@@ -12222,7 +12247,7 @@ The following application will be launched if you accept this request:
         Use a web service to help resolve spelling errors
       </message>
       <message name="IDS_OPTIONS_ENABLE_LOGGING" desc="The label of the checkbox to enable/disable crash and user metrics logging">
-        Automatically send usage statistics and crash reports to Google
+        Automatically send usage statistics and crash reports to House of Life
       </message>
       <message name="IDS_OPTIONS_ENABLE_DO_NOT_TRACK" desc="The label of the checkbox to enable/disable sending the 'Do Not track' header">
         Send a ‘Do Not Track’ request with your browsing traffic
@@ -13429,12 +13454,12 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <if expr="pp_ifdef('android')">
         <message name="IDS_SYNC_OVERVIEW" desc="Mobile: The message that appears in the options dialog when sync has not been set up by the user.">
-          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your Google Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any mobile device. You'll also be automatically signed in to your favorite Google services.
+          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your BitPop Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any computer.
         </message>
       </if>
       <if expr="not pp_ifdef('android') and not pp_ifdef('chromeos')">
         <message name="IDS_SYNC_OVERVIEW" desc="The message that appears in the options dialog when sync has not been set up by the user.">
-          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your Google Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any computer. You'll also be automatically signed in to your favorite Google services.
+          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your Facebook/BitPop Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any computer.
         </message>
       </if>
       <message name="IDS_SYNC_START_SYNC_BUTTON_LABEL" desc="The label that appears on the sync button in the options dialog when sync has not been set up by the user.">
@@ -13458,7 +13483,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>.
       </message>
       <message name="IDS_SYNC_ACCOUNT_SYNCING_TO_USER_WITH_MANAGE_LINK" desc="The message that appears in the options dialog indicating that account is syncing to a user with the given email address, together with a link to manage their data (where supported, or not possible through the application)">
-        Signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Manage your synced data on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+        Signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Manage your synced data on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>BitPop Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
       </message>
       <message name="IDS_SYNC_AUTHENTICATING_LABEL" desc="Label to display while the user is being authenticated to use sync.">
         Authenticating...
@@ -13492,7 +13517,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Sync Error:  <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> is out of date and needs to be updated.
       </message>
       <message name="IDS_SYNC_CLEAR_USER_DATA" desc="Message indicating user needs to clear user data and setup sync.">
-        Sync Error: Please reset Sync via the Google Dashboard.
+        Sync Error: Please reset Sync via the BitPop Dashboard.
       </message>
       <message name="IDS_SYNC_STOP_AND_RESTART_SYNC" desc="Message indicating user needs to stop and restart sync.">
         Sync Error: Please stop and restart Sync.
@@ -13514,10 +13539,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
         You have chosen to encrypt data using your Google password; you can always change your mind later by changing your sync settings.
       </message>
       <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT" desc="Message when explicit passphrase is selected.">
-        Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase, you will need to reset sync.
+        Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by BitPop. If you forget your passphrase, you will need to reset sync.
       </message>
       <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_PREFIX" desc="Message when explicit passphrase is selected.">
-        Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase, you will need to
+        Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by BitPop. If you forget your passphrase, you will need to
       </message>
       <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_POSTFIX" desc="Postfix of the message show when explicit passphrase is selected.">
         reset sync
@@ -13542,22 +13567,25 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Advanced sync settings...
       </message>
       <message name="IDS_SYNC_STOP_SYNCING_BUTTON_LABEL" desc="The text to display on the button to indicate stop syncing functionality.">
-        Disconnect your Google Account...
+        Disconnect your Facebook/BitPop Account...
       </message>
       <message name="IDS_SYNC_STOP_SYNCING_CONFIRM_BUTTON_LABEL" desc="The text to display on the button to confirm the user wishes to stop syncing.">
         Disconnect account
       </message>
       <message name="IDS_SYNC_STOP_SYNCING_DIALOG_TITLE" desc="The title of the dialog that explains what 'stop syncing' means.">
-        Disconnect your Google Account
+        Disconnect your Facebook/BitPop Account
+      </message>
+      <message name="IDS_SYNC_STOP_SYNCING_FACEBOOK_LOGOUT_LABEL" desc="Label for checkbox asking to logout from facebook.com website when stopping sync.">
+        Also logout from facebook.com to allow different user sign-in later
       </message>
       <if expr="pp_ifdef('android')">
         <message name="IDS_SYNC_STOP_SYNCING_EXPLANATION_LABEL" desc="Mobile: The text to display below the 'Stop syncing this account' button on the options pane, explaining what the button does.">
-          By disconnecting your Google Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, your data will remain on this mobile device but changes will no longer be synced to your Google Account. Data already stored in your Google Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+          By disconnecting your BitPop Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, changes to your data on this mobile device will no longer be synced to your BitPop Account. Data already stored in your BitPop Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>BitPop Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
         </message>
       </if>
       <if expr="not pp_ifdef('android')">
         <message name="IDS_SYNC_STOP_SYNCING_EXPLANATION_LABEL" desc="The text to display below the 'Stop syncing this account' button on the options pane, explaining what the button does.">
-          By disconnecting your Google Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, your data will remain on this computer but changes will no longer be synced to your Google Account. Data already stored in your Google Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+          By disconnecting your BitPop Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, changes to your data on this computer will no longer be synced to your BitPop Account. Data already stored in your BitPop Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>BitPop Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
         </message>
       </if>
       <!-- Sync time strings -->
@@ -13598,7 +13626,13 @@ Some features may be unavailable.  Please check that the profile exists and you 
 
       <!-- Sync Promo New Tab Page bubble strings -->
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE" desc="The body of the sync promo NTP bubble.">
-        You're now signed in to <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>. Your bookmarks, history, and other settings are being synced with your Google Account.
+        You're now signed in to <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>. Your bookmarks, history, and other settings are being synced with your BitPop Account.
+      </message>
+      <message name="IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE_ALT1" desc="And alternate string for the body of the sync promo NTP bubble.">
+        You're now signed in to <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>. Your bookmarks, history, and other settings are being synced with your BitPop Account using default settings.
+      </message>
+      <message name="IDS_SYNC_PROMO_NTP_BUBBLE_LEARN_MORE" desc="The learn more link in the sync promo NTP bubble. Clicking the link will take users to a page explaining what sync is.">
+        Learn more
       </message>
       <if expr="not pp_ifdef('use_titlecase')">
         <message name="IDS_SYNC_PROMO_NTP_BUBBLE_OK" desc="The ok button in the sync promo NTP bubble. Clicking on the button will dismiss the bubble.">
@@ -13646,7 +13680,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Sync the following items automatically:
       </message>
       <message name="IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS" desc="Text explaining the 'Choose Datatypes' dialog.">
-        <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> securely syncs your data with your Google account. Keep everything synced or customize synced data types and encryption settings.
+        <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> securely syncs your data with your BitPop account. Keep everything synced or customize synced data types and encryption settings.
+      </message>
+      <message name="IDS_SYNC_ENCRYPTION_DISABLED_MESSAGE" desc="">
+       &lt;strong&gt;Note:&lt;/strong&gt; &lt;em&gt;Passwords are not synced by default.&lt;/em&gt; To enable passwords sync along with
+       encryption click the "<ph name="ADVANCED_TEXT">$1<ex>Advanced...</ex></ph>" link below.
       </message>
       <message name="IDS_SYNC_EVERYTHING" desc="A radio button for users who want to sync all data types.">
         Sync everything
@@ -13689,6 +13727,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_SYNC_ENCRYPTION_DATA_TYPES_TITLE" desc="Title of the section containing the data types to encrypt.">
         Encrypted data types
       </message>
+      <message name="IDS_SYNC_DO_NOT_ENCRYPT" desc="Text of the radio that when selected causes sync to not store sensitive data on server. No encryption is provided in this case.">
+        Do not encrypt. Passwords can not be synced.
+      </message>
       <message name="IDS_SYNC_ENCRYPT_SENSITIVE_DATA" desc="Text of the radio that when selected causes sync to encrypt sensitive data.">
         Encrypt passwords
       </message>
@@ -13706,10 +13747,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Encryption passphrase
       </message>
       <message name="IDS_SYNC_ENCRYPTION_INSTRUCTIONS" desc="Instructions for the encryption settings tab.">
-        <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> requires you to encrypt your data using either your Google password or your own passphrase.
+        <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> requires you to encrypt your data using your own passphrase.
       </message>
       <message name="IDS_SYNC_PASSPHRASE_WARNING" desc="Warning message about using a passphrase for sync.">
-        You are currently using a passphrase.  If you have forgotten your passphrase, you can reset sync to clear your data from Google's servers using the Google Dashboard.
+        You are currently using a passphrase.  If you have forgotten your passphrase, you can reset sync to clear your data.
       </message>
       <message name="IDS_SYNC_ENCRYPTION_SECTION_TITLE" desc="Title of the section containing sync encryption preferences.">
         Encryption options
@@ -13767,7 +13808,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         The passphrase you entered is incorrect.
       </message>
       <message name="IDS_SYNC_PASSPHRASE_RECOVER" desc="Message about how to recover from a lost passphrase.">
-        If you've forgotten your passphrase, stop and reset Sync via <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+        If you've forgotten your passphrase, stop and reset Sync via <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>BitPop Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
       </message>
 
       <message name="IDS_SYNC_PASSPHRASE_CANCEL_YES" desc="String for 'yes' button on passphrase cancel warning dialog.">
@@ -13787,17 +13828,17 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <if expr="not pp_ifdef('android')">
         <message name="IDS_SYNC_LOGIN_INTRODUCTION" desc="The message to display at the top of the login dialog">
           <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> sync makes it easy to share your data (such as bookmarks and settings) between your computers.
-          <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> synchronizes your data by storing it online with Google when you sign in with your Google Account.
+          <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> synchronizes your data by storing it online with BitPop when you sign in with your BitPop Account.
         </message>
       </if>
       <message name="IDS_SYNC_SETUP_TITLE" desc="The title of the Sync Setup overlay.">
-        Sign in with your Google Account
+        Sign in with your BitPop Account
       </message>
       <message name="IDS_SYNC_LOGIN_SIGNIN_PREFIX" desc="The first part of the sentence that is displayed after the login info">
         Sign in with your
       </message>
       <message name="IDS_SYNC_LOGIN_SIGNIN_SUFFIX" desc="The second part of the sentence. Google will be replaced by the Google logo. The translation of 'Account' will be display in bold">
-        Google Account
+        BitPop Account
       </message>
       <message name="IDS_SYNC_LOGIN_EMAIL_NEW_LINE" desc="The user Email address of the Google account. This label appears on a separate line from the text field.">
         Email
@@ -13821,7 +13862,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         or <ph name="IDS_SYNC_CREATE_ACCOUNT">$1<ex>Create a Google Account</ex></ph>
       </message>
       <message name="IDS_SYNC_CREATE_ACCOUNT" desc="The text of a hyperlink to create a Google account">
-        Create a Google Account
+        Create a BitPop Account
       </message>
       <message name="IDS_SYNC_CANNOT_BE_BLANK" desc="The input error message when the user hasn't entered a username or password">
         Required field cannot be left blank
@@ -15362,11 +15403,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <!-- Windows 8 Metro mode. -->
     <message name="IDS_METRO_FLOW_TAB_TITLE"
              desc="The dialog window title.">
-      Welcome to Chrome
+      Welcome to BitPop
     </message>
     <message name="IDS_METRO_FLOW_TITLE_SHORT"
              desc="The title at the top of the window guiding user through making Chrome default in Metro.">
-      Chrome is almost ready.
+      BitPop is almost ready.
     </message>
     <message name="IDS_METRO_FLOW_DESCRIPTION"
              desc="Wordy description of what the set-Chrome-as-Metro flow is all about.">
@@ -15378,7 +15419,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
     </message>
     <message name="IDS_METRO_FLOW_LOGO_STRING_ALT"
              desc="Alt text for the faded chrome logo image.">
-        Chrome logo
+        BitPop logo
     </message>
     <message name="IDS_METRO_MISSING_PLUGIN_PROMPT"
              desc="Info Bar message to let user do something about the missing plugin">
@@ -15402,15 +15443,15 @@ Some features may be unavailable.  Please check that the profile exists and you 
     </message>
     <message name="IDS_WIN8_RESTART"
              desc="Text for the infobar button to restart Chrome in desktop mode. Doesn't explicitly mention 'on the desktop' because the infobar message already says that.">
-      Relaunch Chrome
+      Relaunch BitPop
     </message>
     <message name="IDS_WIN8_DESKTOP_RESTART"
              desc="Text for the menu item to restart chrome in desktop mode. Aplies to Windows 8 only">
-      Relaunch Chrome on the desktop
+      Relaunch BitPop on the desktop
     </message>
     <message name="IDS_WIN8_METRO_RESTART"
              desc="Text for the menu item to restart chrome in metro. Aplies to Windows 8 only">
-      Relaunch Chrome in Windows 8 mode
+      Relaunch BitPop in Windows 8 mode
     </message>
 
     <!-- Media Galleries. -->
@@ -15590,6 +15631,139 @@ Some features may be unavailable.  Please check that the profile exists and you 
       Try it
     </message>
 
+    <!-- Strings for bitpop settings page -->
+    <message name="IDS_BITPOP_SETTINGS_TITLE"
+          desc="Title for main bitpop settings page">
+      BitPop Settings
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SIDEBAR_SECTION_TITLE"
+          desc="Title for facebook chat settings section">
+      Facebook Chat
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SHOW_CHAT_LABEL"
+          desc="Label for checkbox toggling the chat state on facebook.com">
+      Always show chat on facebook.com
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SHOW_JEWELS_LABEL"
+          desc="Label for checkbox toggling the jewels state on facebook.com">
+      Always show Requests, Messages and Notifications on facebook.com
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_NOTIFICATIONS_SECTION_TITLE"
+          desc="Title for facebook notifications settings section">
+      Facebook Notifications
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_OPEN_NOTIFICATION_SETTINGS"
+          desc="Title for a button opening a facebook.com link with settings for notifications">
+      Open Notification Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_FILTER_CONTROL"
+          desc="Title for first section of Uncensor Domains settings">
+      Filter Control
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_ALWAYS_REDIRECT"
+          desc="Label for user selection of redirecting every time domain matches">
+      Always redirect / ON
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NEVER_REDIRECT"
+          desc="Label for user selection of not redirecting even if the domain matches">
+      Never redirect / OFF
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NOTICES_TITLE"
+          desc="Title for notices setting for uncensor domains extensions">
+      Notices
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_SHOW_MESSAGE"
+          desc="Label for checkbox enabling webkit notifications when redirects happen">
+      Show message when redirected
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NOTIFY_UPDATES"
+          desc="Label for checkbox enabling webkit notifications on redirect domains list update">
+      Be notified when domain list updates
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_OPEN_LIST_BUTTON_TITLE"
+          desc="Title for button activating settings overlay with domain filter and exceptions">
+      Domain list settings...
+    </message>
+    <message name="IDS_BITPOP_GLOBAL_PROXY_CONTROL_TITLE"
+          desc="Title for first section of uncensor proxy settings">
+      Global Proxy Control
+    </message>
+    <message name="IDS_BITPOP_WHEN_TO_USE_PROXY"
+          desc="Label for combo group of choosing the proxy usage scenario">
+      When to use proxy
+    </message>
+    <message name="IDS_BITPOP_USE_AUTO_PROXY"
+          desc="Label for combo choice of using proxy automatically">
+      Use auto proxy on blocked sites / ON
+    </message>
+    <message name="IDS_BITPOP_NEVER_USE_PROXY"
+          desc="Label for combo choice of never using proxy">
+      Never use proxy / OFF
+    </message>
+    <message name="IDS_BITPOP_ASK_BEFORE_USING_PROXY"
+          desc="Label for combo choice of asking before using proxy">
+      Ask me before using proxy / CUSTOM
+    </message>
+    <message name="IDS_BITPOP_OPEN_PROXY_DOMAIN_SETTINGS_BUTTON_TITLE"
+          desc="Title for button opening domain proxy settings">
+      Open proxy domains preferences...
+    </message>
+    <message name="IDS_BITPOP_SHOW_MESSAGE_FOR_ACTIVE_PROXY"
+          desc="Label for checkbox enabling messages about successful redirects in info bar">
+      Show message when proxy is active
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_FILTER_OVERLAY_TITLE"
+          desc="Title for settings overlay of the Uncensor Filter extension, containing two lists: domains which will be redirected and a list of exceptions (domains which won't be redirected)">
+      Customize Uncensor Filter Domain List Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_THE_FILTER"
+          desc="Title for main redirections table of uncensor filter options overlay">
+      The Filter
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_EXCEPTION"
+          desc="Title for exceptions table of uncensor filter options overlay">
+      Exceptions
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_ORIGINAL_DOMAIN"
+          desc="Uncensor overlay table column header title for the column containing source domain string">
+      Original Domain
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NEW_LOCATION"
+          desc="Uncensor overlay table column header title for the column containing destination domain string">
+      New Location
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_BLOCKED_SITES"
+          desc="Title of the Uncensor Proxy overlay for customizing settings for blocked sites">
+      Customize Blocked Sites Proxying Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_START"
+          desc="First part of string describing the following blocked sites table. This string will include the country name after the first part and before the last part">
+      A list of sites blocked in
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_END"
+          desc="Last part of string describing the following blocked sites table. This string will include the country name after the first part and before the last part">
+      collected through IP recognition:
+    </message>
+    <message name="IDS_BITPOP_UPDATE_DOMAINS_BUTTON_LABEL"
+          desc="Title for button which starts the domain list update">
+      Update Domain List
+    </message>
+    <message name="IDS_BITPOP_USE_GLOBAL_SETTING"
+          desc="Contents of the default combo entry for choosing the global setting for domain proxy redirection">
+      Use Global setting
+    </message>
+    <message name="IDS_USE_BITPOP_PROXY">
+      Use BitPop proxy for blocked sites
+    </message>
+    <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED" desc="">
+      &lt;strong&gt;Encryption and passwords sync may be disabled, if you have not enabled it intentionally.&lt;/strong&gt; Go to <ph name="BEGIN_LINK">&lt;a href="#" id=&quot;login-status-advanced&quot;&gt;<ex>&lt;a href=&quot;#&quot; id=&quot;login-status-advanced&quot;&gt;</ex></ph><ph name="SYNC_CUSTOMIZE">$1<ex>Advanced...</ex></ph><ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to enable encryption and configure synced data.
+    </message>
+    <message name="IDS_FBB_BUBBLE_TITLE" desc="Title of the 'f' button bubble shown on first launch">
+      Open Facebook chat sidebar from here
+    </message>
+    <message name="IDS_FBB_BUBBLE_SUBTEXT" desc="Text below the title for the 'f' button bubble">
+      Click the button and login to Facebook to stay online with your friends. You will be able to use 'Messages' and 'Notifications' popups right near this button after a successful login.
+    </message>
     </messages>
 
     <structures fallback_to_english="true">

@@ -2211,4 +2211,22 @@ const char kRLZBrand[] = "rlz.brand";
 const char kRLZDisabled[] = "rlz.disabled";
 #endif
 
+const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
+const char kFacebookShowFriendsList[] = "facebook.showFriendsList";
+const char kIsSurfPopupShown[] = "bitpop.surfPopupShown";
+
+const char kFacebookShowChat[] = "bitpop.facebook_show_chat";
+const char kFacebookShowJewels[] = "bitpop.facebook_show_jewels";
+const char kUncensorShouldRedirect[] = "bitpop.uncensor_should_redirect";
+const char kUncensorShowMessage[] = "bitpop.uncensor_show_message";
+const char kUncensorNotifyUpdates[] = "bitpop.uncensor_notify_updates";
+const char kUncensorDomainFilter[] = "bitpop.uncensor_domain_filter";
+const char kUncensorDomainExceptions[] = "bitpop.uncensor_domain_exceptions";
+const char kGlobalProxyControl[] = "bitpop.global_proxy_control";
+const char kShowMessageForActiveProxy[] = "bitpop.show_message_for_active_proxy";
+const char kIPRecognitionCountryName[] = "bitpop.ip_recognition_country_name";
+const char kBlockedSitesList[] = "bitpop.blocked_sites_list";
+
+const char kShouldNotEncrypt[] = "bitpop.should_not_encrypt";
+
 }  // namespace prefs

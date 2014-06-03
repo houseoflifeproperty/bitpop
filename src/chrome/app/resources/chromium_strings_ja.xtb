@@ -1,52 +1,51 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ja">
 <translation id="6676384891291319759">インターネットにアクセス</translation>
-<translation id="6373523479360886564">Chromium をアンインストールしてもよろしいですか？</translation>
-<translation id="6510925080656968729">Chromium をアンインストール</translation>
-<translation id="6893813176749746474">Chromium が更新されましたが、30 日以上使用されていません。</translation>
-<translation id="1550579416447684632">Chromium アプリを起動</translation>
-<translation id="4267347018362241535">Chromium アプリ ランチャーは、Chromium アプリ用のスタンドアロン プラットフォームです。</translation>
+<translation id="8447784615389818621">BitPop をアンインストールしてもよろしいですか？</translation>
+<translation id="100741878661450640">BitPop をアンインストール</translation>
+<translation id="4301276314211054820">BitPop が更新されましたが、30 日以上使用されていません。</translation>
+<translation id="8935261719622405725">BitPop アプリを起動</translation>
+<translation id="2556535128417126306">BitPop アプリ ランチャーは、BitPop アプリ用のスタンドアロン プラットフォームです。</translation>
 <translation id="2770231113462710648">既定のブラウザを変更:</translation>
-<translation id="6613594504749178791">変更内容は次に Chromium を再起動したときに有効になります。</translation>
-<translation id="3748537968684000502">Chromium の安全なページを表示しています。</translation>
-<translation id="8971920611044657379">Chromium Frame</translation>
+<translation id="6870152852581894991">変更内容は次に BitPop を再起動したときに有効になります。</translation>
+<translation id="3588014340702790340">BitPop の安全なページを表示しています。</translation>
+<translation id="6789998774111513164">BitPop Frame</translation>
 <translation id="1065672644894730302">ユーザー設定ファイルを読み込むことができません。一部の機能が利用できない可能性があります。また、設定への変更は保存されません。</translation>
-<translation id="4222661289444749267">Chromium Frame が更新されました。</translation>
-<translation id="2843244238218937196">Chromium Renderer</translation>
-<translation id="7128196614940529818">このパソコンには既に Chromium Frame がインストールされており、パソコンのすべてのユーザーが使用できます。ユーザー レベルで Chromium Frame をインストールする場合は、管理者がインストールしたシステム レベルの Chromium Frame を最初にアンインストールする必要があります。</translation>
+<translation id="4901429675189043920">BitPop Frame が更新されました。</translation>
+<translation id="1132852132282742543">BitPop Renderer</translation>
+<translation id="7155774694068736041">このパソコンには既に BitPop Frame がインストールされており、パソコンのすべてのユーザーが使用できます。ユーザー レベルで BitPop Frame をインストールする場合は、管理者がインストールしたシステム レベルの Chromium Frame を最初にアンインストールする必要があります。</translation>
 <translation id="731644333568559921">Chromium OS を更新(&amp;C)</translation>
-<translation id="7421823331379285070">Chromium は、Windows XP 以降が必要です。一部の機能が動作しない場合があります。</translation>
+<translation id="5284421695473942517">BitPop は、Windows XP 以降が必要です。一部の機能が動作しない場合があります。</translation>
 <translation id="3549345495227188780">Chromium OS のスタート ガイド</translation>
-<translation id="4330297532943865716">システム上に競合している Chromium または Chromium Frame が見つかりました。こちらをアンインストールしてからもう一度お試しください。</translation>
-<translation id="6953661834318318668">Chromium ツールバー</translation>
-<translation id="7097100943370017396">お使いのオペレーティング システムはサポートが終了しているため、今後 Chromium は更新されません。</translation>
-<translation id="2245147136185581459">Chromium キャプティブ ポータル検出機能</translation>
-<translation id="4285930937574705105">原因不明のエラーによりインストールが失敗しました。実行中の Chromium を終了してからもう一度お試しください。</translation>
-<translation id="2589479092236095792">Chromium 自動入力設定</translation>
-<translation id="658492233547000995">Chromium アプリ ランチャーを使用してアプリを起動できます。</translation>
+<translation id="8363397932717822970">システム上に競合している BitPop または BitPop Frame が見つかりました。こちらをアンインストールしてからもう一度お試しください。</translation>
+<translation id="8235603028098851915">BitPop ツールバー</translation>
+<translation id="5953515305183787825">お使いのオペレーティング システムはサポートが終了しているため、今後 BitPop は更新されません。</translation>
+<translation id="7230682351542979557">BitPop キャプティブ ポータル検出機能</translation>
+<translation id="325440606879482824">原因不明のエラーによりインストールが失敗しました。実行中の BitPop を終了してからもう一度お試しください。</translation>
+<translation id="7224939653007212692">BitPop 自動入力設定</translation>
+<translation id="3078552028547324322">BitPop アプリ ランチャーを使用してアプリを起動できます。</translation>
 <translation id="3555616473548901994">アンインストールが完了しました。</translation>
-<translation id="3674409928058572366">Chromium App Host</translation>
-<translation id="2886012850691518054">オプション: 使用状況データと障害レポートを Google に自動送信して Chromium の機能向上に役立てる。</translation>
-<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
-<translation id="1989424089625731201">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書にはエラーがあります。Chromium ではエラーのある証明書を使用することはできず、そのサイトが確かに接続しようとしたサイトであるかどうかを検証することはできません。</translation>
-<translation id="3103660991484857065">インストーラ アーカイブを解凍できませんでした。Chromium をダウンロードし直してください。</translation>
-<translation id="872034308864968620">Chromium をバックグラウンドで実行する</translation>
-<translation id="5109068449432240255">はい、Chromium を終了します</translation>
-<translation id="4320129595801648679">Chromium の新しいタブ ページが改良されました。これらのラベルをクリックしてセクションを切り替えることができます。設定は次回使用時にも引き継がれます。</translation>
+<translation id="5814137742095860156">BitPop App Host</translation>
+<translation id="9205983754412543288">オプション: 使用状況データと障害レポートを Google に自動送信して BitPop の機能向上に役立てる。</translation>
+<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="6259082392093297310">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書にはエラーがあります。BitPop ではエラーのある証明書を使用することはできず、そのサイトが確かに接続しようとしたサイトであるかどうかを検証することはできません。</translation>
+<translation id="3801183610358973379">インストーラ アーカイブを解凍できませんでした。BitPop をダウンロードし直してください。</translation>
+<translation id="4450789702440326676">BitPop をバックグラウンドで実行する</translation>
+<translation id="2963590958538393837">はい、BitPop を終了します</translation>
+<translation id="8031724302809093115">BitPop の新しいタブ ページが改良されました。これらのラベルをクリックしてセクションを切り替えることができます。設定は次回使用時にも引き継がれます。</translation>
 <translation id="1480489203462860648">使ってみる（既にインストール済み）</translation>
-<translation id="3032787606318309379">Chromium に追加...</translation>
-<translation id="4831257561365056138">Chromium アプリ ランチャーをアンインストール</translation>
-<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>警告:<ph name="END_BOLD"/> 拡張機能による閲覧履歴の記録を Chromium で停止することはできません。シークレット モードでこの拡張機能を無効にするには、このオプションの選択を解除してください。</translation>
-<translation id="985602178874221306">Chromium 開発者</translation>
-<translation id="8628626585870903697">印刷プレビューの表示に必要な PDF ビューアが Chromium にインストールされていません。</translation>
-<translation id="7138853919861947730">Chromium は、より快適なブラウジングを提供する目的でウェブサービスを使用することがあります。</translation>
-<translation id="466053073629175099">Chromium にログインしています。ブックマーク、履歴、その他の設定は Google アカウントに同期されます。</translation>
-<translation id="4179848566211676653">Chromium を終了</translation>
-<translation id="3849925841547750267">Mozilla Firefox の設定は現在ブラウザが実行されているため使用できません。設定をインポートするには、作業内容を保存し、Firefox のウィンドウをすべて閉じてから、[続行] をクリックしてください。</translation>
-<translation id="7771626876550251690">証明書に記載されているアドレスが、ブラウザがアクセスしようとしたウェブサイトのアドレスと一致しません。理由の 1 つとして、通信が悪意のあるユーザーによって傍受され、そのユーザーから別のウェブサイトの証明書が提示されているために、アドレスが一致しないことが考えられます。あるいは、アクセスしようとしているウェブサイトを含む複数のウェブサイトについて同じ証明書を返すようにサーバーが設定されているが、その証明書がすべてのサイトについて有効とは限らないことが考えられます。Chromium では、アクセスしているサイトが確かに &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; であることは保証できますが、アクセスしようとした &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; と同じサイトであるかどうかは検証できません。次に進むと、以降 Chromium ではアドレスの不一致がチェックされなくなります。</translation>
-<translation id="2401271577450445716"><ph name="BEGIN_BOLD"/>
-          Chromium メニュー &gt;
+<translation id="7098153548331126805">BitPop に追加...</translation>
+<translation id="5928487969163300899">BitPop アプリ ランチャーをアンインストール</translation>
+<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>警告:<ph name="END_BOLD"/> 拡張機能による閲覧履歴の記録を BitPop で停止することはできません。シークレット モードでこの拡張機能を無効にするには、このオプションの選択を解除してください。</translation>
+<translation id="3941397373453695568">印刷プレビューの表示に必要な PDF ビューアが BitPop にインストールされていません。</translation>
+<translation id="8155571637339134666">BitPop は、より快適なブラウジングを提供する目的でウェブサービスを使用することがあります。</translation>
+<translation id="5383732173730790693">BitPop にログインしています。ブックマーク、履歴、その他の設定は Google アカウントに同期されます。</translation>
+<translation id="6866316083935040427">BitPop を終了</translation>
+<translation id="4759775690587852534">Mozilla Firefox の設定は現在ブラウザが実行されているため使用できません。設定をインポートするには、作業内容を保存し、Firefox のウィンドウをすべて閉じてから、[続行] をクリックしてください。</translation>
+<translation id="2411757162791070146">証明書に記載されているアドレスが、ブラウザがアクセスしようとしたウェブサイトのアドレスと一致しません。理由の 1 つとして、通信が悪意のあるユーザーによって傍受され、そのユーザーから別のウェブサイトの証明書が提示されているために、アドレスが一致しないことが考えられます。あるいは、アクセスしようとしているウェブサイトを含む複数のウェブサイトについて同じ証明書を返すようにサーバーが設定されているが、その証明書がすべてのサイトについて有効とは限らないことが考えられます。BitPop では、アクセスしているサイトが確かに &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; であることは保証できますが、アクセスしようとした &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; と同じサイトであるかどうかは検証できません。次に進むと、以降 BitPop ではアドレスの不一致がチェックされなくなります。</translation>
+<translation id="2423180989259159758"><ph name="BEGIN_BOLD"/>
+          BitPop メニュー &gt;
           [<ph name="SETTINGS_TITLE"/>] 
           &gt;
           [<ph name="ADVANCED_TITLE"/>] 
@@ -56,58 +55,58 @@
           [LAN の設定] 
           <ph name="END_BOLD"/>
           を順にクリックして、[LAN にプロキシ サーバーを使用する] チェックボックスをオフにします。</translation>
-<translation id="4330585738697551178">このモジュールは Chromium と競合することがわかっています。</translation>
-<translation id="3190315855212034486">エラー: Chromium で問題が発生しました。今すぐ再起動しますか？</translation>
-<translation id="6714487516757221107">現在、インストールできる Chromium と Chromium Frame のアップデートはありません。</translation>
+<translation id="2886079192271351730">このモジュールは BitPop と競合することがわかっています。</translation>
+<translation id="8324687802311409372">エラー: BitPop で問題が発生しました。今すぐ再起動しますか？</translation>
+<translation id="606385048658239900">現在、インストールできる BitPop と BitPop Frame のアップデートはありません。</translation>
 <translation id="3197823471738295152">お使いの端末は最新の状態です。</translation>
 <translation id="8551886023433311834">更新を完了するには、端末を再起動してください。</translation>
-<translation id="8353224596138547809">Chromium でこのサイトのパスワードを保存しますか？</translation>
+<translation id="9090519209458031409">BitPop でこのサイトのパスワードを保存しますか？</translation>
 <translation id="7339898014177206373">新しいウィンドウ</translation>
 <translation id="3026202950002788510">以下の順にアクセスします:
           <ph name="BEGIN_BOLD"/>
           [アプリケーション] &gt; [システム環境設定] &gt; [ネットワーク] &gt; [詳細] &gt; [プロキシ]
           <ph name="END_BOLD"/>
           選択されているすべてのプロキシのチェックボックスをオフにします。</translation>
-<translation id="4124681358536363708">Chromium のインストール先ディレクトリが現在使用中です。パソコンを再起動して、もう一度お試しください。</translation>
-<translation id="8770560772173120024">Chromium にお気に入り/ブックマークをインポートしています。</translation>
+<translation id="85540521058185027">BitPop のインストール先ディレクトリが現在使用中です。パソコンを再起動して、もう一度お試しください。</translation>
+<translation id="5710380450759072582">BitPop にお気に入り/ブックマークをインポートしています。</translation>
 <translation id="225614027745146050">ようこそ</translation>
-<translation id="9191268552238695869">このパソコンには管理者権限のあるユーザーがインストールしたシステム レベル（パソコンの全ユーザーが利用可）の Chromium があります。ユーザー レベルの Chromium はシステム レベルの Chromium に置き換えられます。</translation>
-<translation id="3509308970982693815">すべての Chromium ウィンドウを閉じてからもう一度お試しください。</translation>
-<translation id="4077262827416206768">変更内容を反映するには、すべての Chromium ウィンドウを閉じてから Chromium を再起動してください。</translation>
-<translation id="6944967875980567883">Chromium に読み込まれているモジュール</translation>
-<translation id="118298050220780080">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書の発行元は、お使いのパソコンのオペレーティング システムによって信頼されていない発行元です。サーバーが独自のセキュリティ認証情報を生成し、それが Chromium では認証情報として信頼できないものであるか、悪意のあるユーザーが通信を傍受しようとしている可能性があります。</translation>
-<translation id="3296368748942286671">Chromium を閉じた際にバックグラウンド アプリの処理を続行する</translation>
+<translation id="3421246989510066651">このパソコンには管理者権限のあるユーザーがインストールしたシステム レベル（パソコンの全ユーザーが利用可）の BitPop があります。ユーザー レベルの BitPop はシステム レベルの Chromium に置き換えられます。</translation>
+<translation id="1563133725769368154">すべての BitPop ウィンドウを閉じてからもう一度お試しください。</translation>
+<translation id="6948146312619379712">変更内容を反映するには、すべての BitPop ウィンドウを閉じてから BitPop を再起動してください。</translation>
+<translation id="5845248948746043578">BitPop に読み込まれているモジュール</translation>
+<translation id="4718546117684412327">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書の発行元は、お使いのパソコンのオペレーティング システムによって信頼されていない発行元です。サーバーが独自のセキュリティ認証情報を生成し、それが BitPop では認証情報として信頼できないものであるか、悪意のあるユーザーが通信を傍受しようとしている可能性があります。</translation>
+<translation id="2585492770508769131">BitPop を閉じた際にバックグラウンド アプリの処理を続行する</translation>
 <translation id="473775607612524610">アップデート</translation>
-<translation id="6055895534982063517">Chromium がさらに速くなりました！最新バージョンをぜひお試しください。</translation>
-<translation id="2407806170074302369">Chromium Frame について...</translation>
-<translation id="5405650547142096840">Chromium から削除</translation>
+<translation id="1141543168124987471">BitPop がさらに速くなりました！最新バージョンをぜひお試しください。</translation>
+<translation id="6560811749587757293">BitPop Frame について...</translation>
+<translation id="5971960158340115871">BitPop から削除</translation>
 <translation id="7747138024166251722">インストーラーの一時ディレクトリを作成できませんでした。ディスクの空き領域とソフトウェアのインストール許可があることを確認してください。</translation>
-<translation id="3258596308407688501">Chromium はこのデータ ディレクトリへの読み書きを実行できません:
+<translation id="6494656531179085521">BitPop はこのデータ ディレクトリへの読み書きを実行できません:
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="4932687624772039103">Chromium は <ph name="OS_NAME"/> をサポートしていません。</translation>
+<translation id="7911731442009818211">BitPop は <ph name="OS_NAME"/> をサポートしていません。</translation>
 <translation id="8738921060445980047">バージョンが不明です。</translation>
 <translation id="6970811910055250180">お使いの端末を更新しています...</translation>
 <translation id="2485422356828889247">アンインストール</translation>
-<translation id="85843667276690461">Chromium の使用に関するアドバイス</translation>
-<translation id="263863604136125912">Chromium を起動</translation>
-<translation id="2881203820889150661">Chromium では、現在のデスクトップ環境を特定できないため、アプリケーション ショートカットを作成できません。</translation>
-<translation id="4886158514168859177">新しいバージョンの Chromium Frame が既にインストールされています。ソフトウェアが動作しない場合は、Chromium Frame をアンインストールしてからもう一度お試しください。</translation>
+<translation id="8450502629618876351">BitPop の使用に関するアドバイス</translation>
+<translation id="4742066939161073105">BitPop を起動</translation>
+<translation id="736882515641604854">BitPop では、現在のデスクトップ環境を特定できないため、アプリケーション ショートカットを作成できません。</translation>
+<translation id="7209647769822542891">新しいバージョンの BitPop Frame が既にインストールされています。ソフトウェアが動作しない場合は、BitPop Frame をアンインストールしてからもう一度お試しください。</translation>
 <translation id="911206726377975832">閲覧データも削除しますか？</translation>
-<translation id="1699664235656412242">Chromium のウィンドウ（Windows 8 モードのウィンドウを含む）をすべて閉じてからもう一度お試しください。</translation>
-<translation id="6734080038664603509">Chromium を更新(&amp;C)</translation>
+<translation id="4501582071990606935">BitPop のウィンドウ（Windows 8 モードのウィンドウを含む）をすべて閉じてからもう一度お試しください。</translation>
+<translation id="2318017154298876822">BitPop を更新(&amp;C)</translation>
 <translation id="8862326446509486874">権限が不十分なためシステムレベルのインストールができません。管理者権限でインストールしてください。</translation>
-<translation id="1774152462503052664">Chromium をバックグラウンドで実行する</translation>
-<translation id="9022552996538154597">Chromium にログイン</translation>
+<translation id="8308846639737830860">BitPop をバックグラウンドで実行する</translation>
+<translation id="8251642411216619957">BitPop にログイン</translation>
 <translation id="4365115785552740256">Chromium は <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> オープンソース プロジェクトやその他の<ph name="BEGIN_LINK_OSS"/>オープンソース ソフトウェア<ph name="END_LINK_OSS"/>によって実現しました。</translation>
-<translation id="6248213926982192922">Chromium を既定のブラウザにする</translation>
-<translation id="7337881442233988129">Chromium</translation>
-<translation id="3069161343438701711">Chromium Worker</translation>
+<translation id="6321973207566602686">BitPop を既定のブラウザにする</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="6572431599095627851">BitPop Worker</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="6757767188268205357">今後は表示しない</translation>
-<translation id="7294284502435423183">ネットワーク予測を無効にする手順は次のとおりです:
+<translation id="6312770669638222416">ネットワーク予測を無効にする手順は次のとおりです:
         <ph name="BEGIN_BOLD"/>
-        Chromium メニュー &gt;
+        BitPop メニュー &gt;
         [<ph name="SETTINGS_TITLE"/>] 
         &gt;
         [<ph name="ADVANCED_TITLE"/>] 
@@ -115,38 +114,38 @@
         を順にクリックして、[<ph name="NO_PREFETCH_DESCRIPTION"/>] チェックボックスをオフにします。
         このオプションを無効にしても問題が解決しない場合は、
         再度有効にしてページの表示速度を向上させてください。</translation>
-<translation id="275588974610408078">Chromium では、障害レポートをご利用いただけません。</translation>
-<translation id="5909170354645388250">Chromium では使用していません。リソース マップを同期するためのプレースホルダです。予想される 1 つの引数: $1。</translation>
-<translation id="3582788516608077514">Chromium を更新しています...</translation>
-<translation id="7223968959479464213">タスク マネージャ - Chromium</translation>
-<translation id="3838208658251026018"><ph name="BROWSER_COMPONENT"/> から Chromium に次のアイテムをインポートしています:</translation>
-<translation id="6638567566961868659">ブックマークは Chromium メニューやブックマーク バーに表示されます。</translation>
-<translation id="2673087257647337101">Chromium を再起動して更新を完了してください</translation>
-<translation id="5398878173008909840">Chromium の最新バージョンをぜひお試しください。</translation>
-<translation id="2648074677641340862">インストール中にオペレーティング システム エラーが発生しました。Chromium をダウンロードし直してください。</translation>
-<translation id="5942520288919337908">「<ph name="EXTENSION_NAME"/>」を Chromium に追加しました。</translation>
-<translation id="8678787945719392857">この Google アカウントを使用してすべての Chromium 設定を同期しますか？</translation>
-<translation id="8621669128220841554">原因不明のエラーによりインストールに失敗しました。Chromium をもう一度ダウンロードしてください。</translation>
-<translation id="6717134281241384636">バージョンが新しい Chromium のプロフィールは使用できません。
+<translation id="6220055452245182274">BitPop では、障害レポートをご利用いただけません。</translation>
+<translation id="924450301557116466">BitPop では使用していません。リソース マップを同期するためのプレースホルダです。予想される 1 つの引数: $1。</translation>
+<translation id="1984238998837921833">BitPop を更新しています...</translation>
+<translation id="9102885271730191378">タスク マネージャ - BitPop</translation>
+<translation id="3916917357864849352"><ph name="BROWSER_COMPONENT"/> から BitPop に次のアイテムをインポートしています:</translation>
+<translation id="5243897687251941678">ブックマークは BitPop メニューやブックマーク バーに表示されます。</translation>
+<translation id="5925519479755588070">BitPop を再起動して更新を完了してください</translation>
+<translation id="4352003675682958984">BitPop の最新バージョンをぜひお試しください。</translation>
+<translation id="8972540218839637401">インストール中にオペレーティング システム エラーが発生しました。BitPop をダウンロードし直してください。</translation>
+<translation id="8935838934328341225">「<ph name="EXTENSION_NAME"/>」を BitPop に追加しました。</translation>
+<translation id="8871841738132225233">この Google アカウントを使用してすべての BitPop 設定を同期しますか？</translation>
+<translation id="8988481325911971852">原因不明のエラーによりインストールに失敗しました。BitPop をもう一度ダウンロードしてください。</translation>
+<translation id="660036136456272595">バージョンが新しい BitPop のプロフィールは使用できません。
 
-一部の機能が利用できない可能性があります。別の場所のプロフィールを指定するか、新しいバージョンの Chromium をご使用ください。</translation>
+一部の機能が利用できない可能性があります。別の場所のプロフィールを指定するか、新しいバージョンの BitPop をご使用ください。</translation>
 <translation id="2712549016134575851">インストールされている別のアプリケーションとの競合が検出されました。</translation>
-<translation id="4881709374218686648">前回、別のアカウントでログインしていたため、今回ログインするとデータが統合されます。Chromium データの<ph name="BEGIN_LINK"/>設定ページ<ph name="END_LINK"/>で新しい Chromium ユーザーを作成することをおすすめします。</translation>
-<translation id="9013087743919948559">Chromium に追加</translation>
-<translation id="6212496753309875659">新しいバージョンの Chromium が既にインストールされています。ソフトウェアが動作しない場合は、Chromium をアンインストールしてからもう一度お試しください。</translation>
-<translation id="3014684866565908571">Chromium Utility</translation>
+<translation id="1095023322915848441">前回、別のアカウントでログインしていたため、今回ログインするとデータが統合されます。BitPop データの<ph name="BEGIN_LINK"/>設定ページ<ph name="END_LINK"/>で新しい BitPop ユーザーを作成することをおすすめします。</translation>
+<translation id="7862155441175671173">BitPop に追加</translation>
+<translation id="5594704848342987755">新しいバージョンの BitPop が既にインストールされています。ソフトウェアが動作しない場合は、BitPop をアンインストールしてからもう一度お試しください。</translation>
+<translation id="3422131153907641068">BitPop Utility</translation>
 <translation id="1298199220304005244">Chromium OS の使用に関するアドバイス</translation>
-<translation id="1691304614444223855">Chromium Frame が更新されました。ブラウザを再起動してください。Chromium バージョン: <ph name="TODO_0001"/>、Chromium Frame バージョン: <ph name="TODO_0002"/></translation>
+<translation id="8854394556488040390">BitPop Frame が更新されました。ブラウザを再起動してください。BitPop バージョン: <ph name="TODO_0001"/>、Chromium Frame バージョン: <ph name="TODO_0002"/></translation>
 <translation id="130631256467250065">変更内容は、次回の端末の起動時に反映されます。</translation>
-<translation id="1105130903706696483">Chromium は正しく終了しませんでした。前回アクセスしたページをもう一度開くには、[復元] をクリックします。</translation>
-<translation id="1929939181775079593">Chromium が応答しません。今すぐ再起動しますか？</translation>
+<translation id="2901348058800597589">BitPop は正しく終了しませんでした。前回アクセスしたページをもう一度開くには、[復元] をクリックします。</translation>
+<translation id="5653921603290474550">BitPop が応答しません。今すぐ再起動しますか？</translation>
 <translation id="6089587093203430357">インスタント検索</translation>
-<translation id="2966088006374919794">Chromium では、<ph name="SCHEME"/> リンクを処理する際に外部アプリケーションの起動が必要になります。リクエストされたリンクは <ph name="PROTOLINK"/> です。</translation>
+<translation id="2410206016513008786">BitPop では、<ph name="SCHEME"/> リンクを処理する際に外部アプリケーションの起動が必要になります。リクエストされたリンクは <ph name="PROTOLINK"/> です。</translation>
 <translation id="8046283042877435986">このサイトでは Chromium Frame（インストール済み）が推奨されています。</translation>
-<translation id="6287463253129672858">実行中の Chromium Frame と同じバージョンをインストールすることはできません。Chromium Frame を閉じてからもう一度お試しください。</translation>
-<translation id="2558235863893655150">Chromium でパスワードを保存しますか？</translation>
-<translation id="3398522627033804247"><ph name="BEGIN_BOLD"/>
-          Chromium メニュー &gt;
+<translation id="5523374683005655880">実行中の BitPop Frame と同じバージョンをインストールすることはできません。BitPop Frame を閉じてからもう一度お試しください。</translation>
+<translation id="5574763173398621221">BitPop でパスワードを保存しますか？</translation>
+<translation id="7730150800475367955"><ph name="BEGIN_BOLD"/>
+          BitPop メニュー &gt;
           [<ph name="SETTINGS_TITLE"/>] 
           &gt;
           [<ph name="INTERNET_TITLE"/>] 
@@ -162,15 +161,14 @@
           <ph name="END_BOLD"/>] 
           タブ）がある場合は、そのボタンをクリックして、設定
           が [直接] になっていることを確認します。</translation>
-<translation id="1231416733874080281">Chromium メニューを表示する</translation>
-<translation id="1688750314291223739">同期を設定すると、パーソナライズされたブラウザ機能をウェブ上に保存して、どのパソコンの Chromium からでも使用できるようになります。</translation>
+<translation id="5387335700352644169">BitPop メニューを表示する</translation>
 <translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
 <translation id="8865765905101981392">インターネット ブラウザ</translation>
 <translation id="6424492062988593837">Chromium のアップデートが見つかりました。新しいバージョンが利用可能です。</translation>
-<translation id="2910007522516064972">Chromium について(&amp;C)</translation>
-<translation id="8453117565092476964">インストーラ アーカイブが壊れているか無効です。Chromium をダウンロードし直してください。</translation>
-<translation id="2162026298602630383"><ph name="BEGIN_BOLD"/>
-          Chromium メニュー &gt;
+<translation id="6385431739515246076">BitPop について(&amp;C)</translation>
+<translation id="7521125380721653484">インストーラ アーカイブが壊れているか無効です。BitPop をダウンロードし直してください。</translation>
+<translation id="6836892784612884953"><ph name="BEGIN_BOLD"/>
+          BitPop メニュー &gt;
           [<ph name="SETTINGS_TITLE"/>] 
           &gt;
           [<ph name="ADVANCED_TITLE"/>] 
@@ -178,38 +176,37 @@
           [<ph name="PROXIES_TITLE"/>] 
           <ph name="END_BOLD"/>
           を順にクリックして、設定が [プロキシなし] または [直接] になっていることを確認します。</translation>
-<translation id="3249425904492147663">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書は有効期限が切れています。この証明書の有効期限が切れた後に証明書がセキュリティ侵害を受けたのかどうかについて確認できる情報はありません。つまり Chromium では、悪意のあるユーザーでなく &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; と確かに通信していることを保証することはできません。お使いのパソコンの時刻は現在 <ph name="CURRENT_TIME"/> に設定されています。時刻が正しくない場合は、エラーを修正してからこのページを更新してください。</translation>
+<translation id="457806999714267838">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書は有効期限が切れています。この証明書の有効期限が切れた後に証明書がセキュリティ侵害を受けたのかどうかについて確認できる情報はありません。つまり BitPop では、悪意のあるユーザーでなく &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; と確かに通信していることを保証することはできません。お使いのパソコンの時刻は現在 <ph name="CURRENT_TIME"/> に設定されています。時刻が正しくない場合は、エラーを修正してからこのページを更新してください。</translation>
 <translation id="7196020411877309443">このウィンドウが表示される理由</translation>
-<translation id="7483335560992089831">実行中の Chromium と同じバージョンをインストールすることはできません。Chromium を閉じてからもう一度お試しください。</translation>
-<translation id="7641113255207688324">Chromium は既定のブラウザとして設定されていません。</translation>
-<translation id="6208388956150196549">Chromium アプリ ランチャー</translation>
+<translation id="473359818469623008">実行中の BitPop と同じバージョンをインストールすることはできません。BitPop を閉じてからもう一度お試しください。</translation>
+<translation id="2595850371931815386">BitPop は既定のブラウザとして設定されていません。</translation>
+<translation id="1857156280997837230">BitPop アプリ ランチャー</translation>
 <translation id="4458285410772214805">変更内容を反映するには、一度ログアウトして、もう一度ログインしてください。</translation>
-<translation id="9109696651501887488">Windows タスクバーに Chromium アプリ ランチャーへのショートカットを表示します。</translation>
+<translation id="6523007289492675308">Windows タスクバーに BitPop アプリ ランチャーへのショートカットを表示します。</translation>
 <translation id="2119636228670142020">Chromium OS について(&amp;C)</translation>
-<translation id="1708666629004767631">Chromium がさらに安全になりました。最新バージョンをぜひお試しください。</translation>
-<translation id="1539981464052805551">Copyright 2013 The Chromium Authors. All rights reserved.</translation>
-<translation id="6606161915035466984">Chromium アプリ ランチャーを表示する。</translation>
-<translation id="8616882682724010661">Chromium にログインするとその他にも<ph name="BEGIN_LINK"/>さまざまなメリット<ph name="END_LINK"/>があります。</translation>
-<translation id="378917192836375108">Chromium では、ウェブサイト上の電話番号をクリックするだけで Skype で通話を発信できます。</translation>
-<translation id="8724049448828509830">現在ダウンロードを実行中です。ダウンロードがキャンセルされますが、Chromium を終了してもよろしいですか？</translation>
-<translation id="3360567213983886831">Chromium Binaries</translation>
-<translation id="7503101070699687603">Chromium Plug-In Host</translation>
-<translation id="2739631515503418643">現在ダウンロードを実行中です。ダウンロードがキャンセルされますが、Chromium を終了してもよろしいですか？</translation>
-<translation id="9013262824292842194">Chromium のご利用には Windows Vista または Windows XP SP2 以降が必要です。</translation>
-<translation id="1967743265616885482">同じ名前のモジュールは Chromium と競合することがわかっています。</translation>
-<translation id="4224199872375172890">Chromium は最新版です。</translation>
-<translation id="374481098568514319">新しいバージョンの Chromium コンポーネントが既にインストールされています。最新のインストーラを使用してください。</translation>
-<translation id="6240281849816458190">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書はまだ有効になっていません。この証明書が信頼できるかどうかについて確認できる情報はありません。Chromium では、悪意のあるユーザーでなく &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; と確かに通信していることを保証することはできません。お使いのパソコンの時刻は現在、<ph name="CURRENT_TIME"/> に設定されています。時刻が正しくない場合は、システムの時刻を修正してからこのページを更新してください。</translation>
-<translation id="5498103559159810756">Chromium は既定の検索エンジンを使用します。現在は <ph name="PAGE_TITLE"/> に設定されています。この検索エンジンを使用しますか？</translation>
-<translation id="5862307444128926510">Chromium へようこそ</translation>
-<translation id="1622565934590470080">新しいバージョンの Chromium と Chromium Frame が既にインストールされています。ソフトウェアが動作しない場合は、Chromium と Chromium Frame をアンインストールしてからもう一度お試しください。</translation>
-<translation id="7318036098707714271">ユーザー設定ファイルが壊れているか無効です。
+<translation id="4196382931981526364">BitPop がさらに安全になりました。最新バージョンをぜひお試しください。</translation>
+<translation id="1077424736315176936">BitPop アプリ ランチャーを表示する。</translation>
+<translation id="5330935702921516708">BitPop にログインするとその他にも<ph name="BEGIN_LINK"/>さまざまなメリット<ph name="END_LINK"/>があります。</translation>
+<translation id="862266784641000464">BitPop では、ウェブサイト上の電話番号をクリックするだけで Skype で通話を発信できます。</translation>
+<translation id="8072591166076742072">現在ダウンロードを実行中です。ダウンロードがキャンセルされますが、BitPop を終了してもよろしいですか？</translation>
+<translation id="932207424499184915">BitPop Binaries</translation>
+<translation id="3223104112377435850">BitPop Plug-In Host</translation>
+<translation id="7826309952950470209">現在ダウンロードを実行中です。ダウンロードがキャンセルされますが、BitPop を終了してもよろしいですか？</translation>
+<translation id="380873736468525691">BitPop のご利用には Windows Vista または Windows XP SP2 以降が必要です。</translation>
+<translation id="2762974284703971745">同じ名前のモジュールは BitPop と競合することがわかっています。</translation>
+<translation id="5443433498537176573">BitPop は最新版です。</translation>
+<translation id="5637727561937246825">新しいバージョンの BitPop コンポーネントが既にインストールされています。最新のインストーラを使用してください。</translation>
+<translation id="5082591353921977637">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; にアクセスしようとしましたが、サーバーから提示された証明書はまだ有効になっていません。この証明書が信頼できるかどうかについて確認できる情報はありません。BitPop では、悪意のあるユーザーでなく &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; と確かに通信していることを保証することはできません。お使いのパソコンの時刻は現在、<ph name="CURRENT_TIME"/> に設定されています。時刻が正しくない場合は、システムの時刻を修正してからこのページを更新してください。</translation>
+<translation id="1138135211676039883">BitPop は既定の検索エンジンを使用します。現在は <ph name="PAGE_TITLE"/> に設定されています。この検索エンジンを使用しますか？</translation>
+<translation id="185658551912723674">BitPop へようこそ</translation>
+<translation id="6808688532552992663">新しいバージョンの BitPop と BitPop Frame が既にインストールされています。ソフトウェアが動作しない場合は、BitPop と BitPop Frame をアンインストールしてからもう一度お試しください。</translation>
+<translation id="1909867102505992367">ユーザー設定ファイルが壊れているか無効です。
 
 設定を復元できません。</translation>
-<translation id="6403826409255603130">Chromium は、ウェブページやアプリケーションを高速に実行できるスピードと、高い安定性を兼ね備えた非常に使いやすいウェブブラウザです。不正なソフトウェアやフィッシングに対する保護機能が組み込まれており、ウェブを安全にブラウジングできます。</translation>
-<translation id="2927042866129133279">引数が無効です。Chromium Frame を準備完了モードでインストールするには、一緒に Chromium をインストールする必要があります。</translation>
-<translation id="2572494885440352020">Chromium Helper</translation>
-<translation id="442817494342774222">Chromium は、パソコン起動時に自動的に起動されるよう設定されています。</translation>
+<translation id="4933902704814222889">BitPop は、ウェブページやアプリケーションを高速に実行できるスピードと、高い安定性を兼ね備えた非常に使いやすいウェブブラウザです。不正なソフトウェアやフィッシングに対する保護機能が組み込まれており、ウェブを安全にブラウジングできます。</translation>
+<translation id="7673336527696184948">引数が無効です。BitPop Frame を準備完了モードでインストールするには、一緒に BitPop をインストールする必要があります。</translation>
+<translation id="5583217122091744450">BitPop Helper</translation>
+<translation id="6404599307042403560">BitPop は、パソコン起動時に自動的に起動されるよう設定されています。</translation>
 <translation id="8974095189086268230">Chromium OS は、追加の<ph name="BEGIN_LINK_CROS_OSS"/>オープンソース ソフトウェア<ph name="END_LINK_CROS_OSS"/>によって実現しました。</translation>
 <translation id="1221340462641866827">Chromium OS では、<ph name="SCHEME"/> リンクの処理に必要な外部アプリケーションの起動がサポートされていません。リクエストされたリンクは <ph name="PROTOLINK"/> です。</translation>
 </translationbundle>

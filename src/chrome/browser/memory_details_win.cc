@@ -43,7 +43,7 @@ MemoryDetails::MemoryDetails()
     const wchar_t* name;
     const wchar_t* process_name;
   } process_template[MAX_BROWSERS] = {
-    { google_browser_name.c_str(), L"chrome.exe", },
+    { google_browser_name.c_str(), L"bitpop.exe", },
     { google_browser_name.c_str(), L"nacl64.exe", },
     { L"IE", L"iexplore.exe", },
     { L"Firefox", L"firefox.exe", },

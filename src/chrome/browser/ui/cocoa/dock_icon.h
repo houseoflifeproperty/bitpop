@@ -38,4 +38,8 @@
 // Indicates the amount of progress made of the download. Ranges from [0..1].
 - (void)setProgress:(float)progress;
 
+// Sets unread messages number and profile image for dock icon
+// Pass unread = 0, image = nil to clear the effect
+- (void)setUnreadNumber:(int)unread withProfileImage:(NSImage*)image;
+
 @end

@@ -432,6 +432,23 @@ extern const char kSafeSearchSsuiParameter[];
 // The URL for the "Learn more" link in the media access infobar.
 extern const char kMediaAccessLearnMoreUrl[];
 
+// BitPop specific URLs ==================================
+// Facebook chat component extension URL
+
+// The root URL of facebook chat extension
+extern const char kFacebookChatExtensionPrefixURL[];
+
+// Page which shows in a friends list sidebar
+extern const char kFacebookChatExtensionSidebarPage[];
+
+// Page which shows in a chat window popup
+extern const char kFacebookChatExtensionChatPage[];
+
+extern const char kChromeUIBitpopSettingsFrameURL[];
+extern const char kChromeUIBitpopSettingsFrameHost[];
+
+extern const char kChromeUIBitpopSettingsURL[];
+extern const char kChromeUIBitpopSettingsHost[];
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_URL_CONSTANTS_H_

@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="nl">
 <translation id="6879617193011158416">Schakelen naar bladwijzerbalk</translation>
@@ -66,7 +66,7 @@ Psst! De volgende keer kan het handig zijn de incognitomodus <ph name="SHORTCUT_
 <translation id="4940047036413029306">Aanhalingsteken</translation>
 <translation id="1497897566809397301">Toestaan dat lokaal gegevens worden ingesteld (aanbevolen)</translation>
 <translation id="3275778913554317645">Openen als venster</translation>
-<translation id="4553117311324416101">Google heeft vastgesteld dat er misschien schadelijke software op uw computer wordt geïnstalleerd wanneer u doorgaat. Als u deze site in het verleden heeft bezocht of de site vertrouwt, is het mogelijk dat de site onlangs door een hacker is geïnfecteerd. Ga niet verder. U kunt het morgen opnieuw proberen of ergens anders naartoe gaan.</translation>
+<translation id="8198393002783366468">BitPop heeft vastgesteld dat er misschien schadelijke software op uw computer wordt geïnstalleerd wanneer u doorgaat. Als u deze site in het verleden heeft bezocht of de site vertrouwt, is het mogelijk dat de site onlangs door een hacker is geïnfecteerd. Ga niet verder. U kunt het morgen opnieuw proberen of ergens anders naartoe gaan.</translation>
 <translation id="8867568208303837180">Verzenden...</translation>
 <translation id="509988127256758334">Wat vi&amp;nden:</translation>
 <translation id="1420684932347524586">O nee! Kan geen willekeurige persoonlijke RSA-sleutel genereren.</translation>
@@ -232,7 +232,7 @@ Psst! De volgende keer kan het handig zijn de incognitomodus <ph name="SHORTCUT_
 <translation id="1818606096021558659">Pagina</translation>
 <translation id="1549045574060481141">Downloaden bevestigen</translation>
 <translation id="5388588172257446328">Gebruikersnaam:</translation>
-<translation id="1657406563541664238">Help <ph name="PRODUCT_NAME"/> beter te maken door automatisch gebruiksstatistieken en crashmeldingen naar Google te verzenden</translation>
+<translation id="5757566435961687655">Help <ph name="PRODUCT_NAME"/> beter te maken door automatisch gebruiksstatistieken en crashmeldingen naar House of Life te verzenden</translation>
 <translation id="7982789257301363584">Netwerk</translation>
 <translation id="2271281383664374369">Extensieverzoeken naar deze URL zijn tijdelijk stopgezet.</translation>
 <translation id="8528962588711550376">Aanmelden.</translation>
@@ -248,7 +248,7 @@ Psst! De volgende keer kan het handig zijn de incognitomodus <ph name="SHORTCUT_
 <translation id="1776883657531386793"><ph name="OID"/>: <ph name="INFO"/></translation>
 <translation id="1510030919967934016">Deze pagina is geblokkeerd voor het bijhouden van uw locatie.</translation>
 <translation id="8848519885565996859">Door de gebruiker gedefinieerde URL-linkframe</translation>
-<translation id="4640525840053037973">Aanmelden met uw Google-account</translation>
+<translation id="4550196943338771146">Aanmelden met uw BitPop-account</translation>
 <translation id="5255315797444241226">De ingevoerde wachtwoordzin is onjuist.</translation>
 <translation id="762917759028004464">De standaardbrowser is momenteel <ph name="BROWSER_NAME"/>.</translation>
 <translation id="9213479837033539041"><ph name="NUMBER_MANY"/> seconden resterend</translation>
@@ -298,8 +298,8 @@ Psst! De volgende keer kan het handig zijn de incognitomodus <ph name="SHORTCUT_
           en klik op
           <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Zoekmachine toevoegen</translation>
-<translation id="4043223219875055035">Meld u aan met uw Google-account om apps toe te staan instellingen te synchroniseren en andere aangepaste services te leveren.</translation>
-<translation id="6868050610674841964">Als u zich aanmeldt, worden uw gegevens gesynchroniseerd met uw Google-account, zodat u op elk apparaat toegang heeft tot uw bladwijzers, geschiedenis, en andere instellingen.</translation>
+<translation id="7333287746989217896">Meld u aan met uw BitPop-account om apps toe te staan instellingen te synchroniseren en andere aangepaste services te leveren.</translation>
+<translation id="5804885986789001150">Als u zich aanmeldt, worden uw gegevens gesynchroniseerd met uw Facebook/BitPop-account, zodat u op elk apparaat toegang heeft tot uw bladwijzers, geschiedenis, en andere instellingen.</translation>
 <translation id="5498951625591520696">Kan de server niet bereiken.</translation>
 <translation id="1621207256975573490">&amp;Frame opslaan als...</translation>
 <translation id="4681260323810445443">U heeft geen toegang tot de webpagina op <ph name="URL"/>. U moet zich wellicht aanmelden.</translation>
@@ -423,7 +423,7 @@ Psst! De volgende keer kan het handig zijn de incognitomodus <ph name="SHORTCUT_
 <translation id="8194465509832052438">Opdrachten configureren</translation>
 <translation id="4422347585044846479">Bladwijzer voor deze pagina bewerken</translation>
 <translation id="2452539774207938933">Overschakelen naar gebruiker: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome kan een betere spellingcontrole leveren door wat u in de browser typt naar Google-servers te verzenden. Hierdoor kunt u profiteren van dezelfde technologie voor spellingcontrole die ook voor Google Zoeken wordt gebruikt.</translation>
+<translation id="8810891758424955762">BitPop kan een betere spellingcontrole leveren door wat u in de browser typt naar Google-servers te verzenden. Hierdoor kunt u profiteren van dezelfde technologie voor spellingcontrole die ook voor Google Zoeken wordt gebruikt.</translation>
 <translation id="1880905663253319515">Certificaat '<ph name="CERTIFICATE_NAME"/>' verwijderen?</translation>
 <translation id="8546306075665861288">Cachegeheugen met afbeeldingen</translation>
 <translation id="1168100932582989117">Google-naamservers</translation>
@@ -512,7 +512,6 @@ experiment-id: '<ph name="EXPERIMENT_ID"/>'</translation>
 <translation id="1046059554679513793">Deze naam wordt al gebruikt.</translation>
 <translation id="3887847548716051874">Altijd toestaan dat deze site deze microfoon en camera gebruikt</translation>
 <translation id="4497097279402334319">Kan geen verbinding maken met het netwerk.</translation>
-<translation id="7342729285348293164">Meld u aan bij <ph name="PRODUCT_NAME"/> met uw Google-account om uw gepersonaliseerde browserfuncties online op te slaan en deze op elke computer in <ph name="PRODUCT_NAME"/> te gebruiken. U wordt ook automatisch aangemeld bij uw favoriete Google-services.</translation>
 <translation id="2542049655219295786">Google-tabel</translation>
 <translation id="3899879303189199559">Langer dan een jaar offline</translation>
 <translation id="5303618139271450299">Deze webpagina is niet gevonden</translation>
@@ -658,7 +657,6 @@ experiment-id: '<ph name="EXPERIMENT_ID"/>'</translation>
 <translation id="773426152488311044">U bent momenteel de enige gebruiker van <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="2042078858148122628">De server op <ph name="HOST_NAME"/> kan niet worden gevonden, omdat de DNS-lookup is mislukt. DNS is de netwerkservice die de naam van een website vertaalt in het internetadres. Deze fout wordt meestal veroorzaakt door een verbroken internetverbinding of een verkeerd geconfigureerd netwerk. Deze kan ook worden veroorzaakt door een niet reagerende DNS-server of een firewall die de toegang van <ph name="PRODUCT_NAME"/> tot het netwerk blokkeert.</translation>
 <translation id="2159087636560291862">In dit geval is het certificaat niet geverifieerd door een derde partij die uw computer vertrouwt. Iedereen kan een certificaat maken voor een website. Daarom is het belangrijk dat certificaten geverifieerd worden door een betrouwbare derde partij. Zonder die verificatie hebben de identiteitsgegevens in het certificaat geen waarde. Het is daarom niet mogelijk te verifiëren of u communiceert met <ph name="DOMAIN"/> in plaats van met een hacker die een eigen certificaat heeft gemaakt waarin hij claimt <ph name="DOMAIN2"/> te zijn. U kunt beter niet verdergaan.</translation>
-<translation id="58625595078799656">U moet in <ph name="PRODUCT_NAME"/> uw gegevens beveiligen met uw Google-wachtwoord of uw eigen wachtwoordzin.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Is geen certificeringsinstantie</translation>
 <translation id="6099520380851856040">Opgetreden op <ph name="CRASH_TIME"/></translation>
@@ -678,7 +676,7 @@ experiment-id: '<ph name="EXPERIMENT_ID"/>'</translation>
 <translation id="9121814364785106365">Openen als vastgezet tabblad</translation>
 <translation id="6292030868006209076">Invoermethode voor Tamil (itrans)</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_NAME"/> op <ph name="PEPPER_PLUGIN_DOMAIN"/> vraagt om toegang tot uw computer.</translation>
-<translation id="2128450505147514836">Het toegevoegde bestand is geüpload naar Google-servers voor foutopsporing.&lt;br&gt;
+<translation id="7411702401114360503">Het toegevoegde bestand is geüpload naar BitPop-servers voor foutopsporing.&lt;br&gt;
         Opmerking: u kunt één bestand per feedbackmelding toevoegen (maximaal 3 MB)</translation>
 <translation id="3435896845095436175">Inschakelen</translation>
 <translation id="5849294688757445020">GPU-compositing op alle pagina's</translation>
@@ -863,7 +861,7 @@ experiment-id: '<ph name="EXPERIMENT_ID"/>'</translation>
 <translation id="5120247199412907247">Geavanceerde configuratie</translation>
 <translation id="567881659373499783">Versie <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Privacybeleid voor Safe Browsing</translation>
-<translation id="5105859138906591953">Voordat u bladwijzers van Google Toolbar in Google Chrome kunt importeren, moet u zijn aangemeld bij uw Google-account. Meld u opnieuw aan en probeer nogmaals uw bladwijzers te importeren.</translation>
+<translation id="5189894578581316474">Voordat u bladwijzers van Google Toolbar in Google BitPop kunt importeren, moet u zijn aangemeld bij uw Google-account. Meld u opnieuw aan en probeer nogmaals uw bladwijzers te importeren.</translation>
 <translation id="8899851313684471736">Link openen in nieu&amp;w venster</translation>
 <translation id="4110342520124362335">Cookies van <ph name="DOMAIN"/> geblokkeerd.</translation>
 <translation id="2198315389084035571">Vereenvoudigd Chinees</translation>
@@ -932,7 +930,6 @@ experiment-id: '<ph name="EXPERIMENT_ID"/>'</translation>
 <translation id="1049376040497900836">Instanties waarin de versie van <ph name="SHORT_PRODUCT_NAME"/> is gewijzigd</translation>
 <translation id="1422780722984745882">Er zijn meerdere, verschillende Location-headers ontvangen. Dit is niet toegestaan,
         als bescherming tegen aanvallen die HTTP-reacties splitsen.</translation>
-<translation id="7787129790495067395">U gebruikt momenteel een wachtwoordzin. Als u uw wachtwoordzin bent vergeten, kunt u de synchronisatie opnieuw instellen, zodat u uw gegevens van de servers van Google kunt verwijderen met Google Dashboard.</translation>
 <translation id="721997939566478439">OK, super</translation>
 <translation id="6612611129072884913">Deze pagina vastzetten op het startscherm...</translation>
 <translation id="3380365263193509176">Onbekende fout</translation>
@@ -1058,7 +1055,7 @@ Resterende tijd berekenen</translation>
 <translation id="2955913368246107853">Zoekbalk sluiten</translation>
 <translation id="8864170386249720785">SSL-instellingen voor hele mobiele apparaat:</translation>
 <translation id="2560788951337264832"><ph name="NUMBER_ZERO"/> minuten resterend</translation>
-<translation id="3914942725612686145">U bent nu aangemeld bij Chrome. Uw geopende tabbladen, bladwijzers en omniboxgegevens worden gesynchroniseerd met uw Google-account.</translation>
+<translation id="6896530527102607056">U bent nu aangemeld bij Chrome. Uw geopende tabbladen, bladwijzers en omniboxgegevens worden gesynchroniseerd met uw Facebook/BitPop-account.</translation>
 <translation id="5642508497713047">CRL-ondertekenaar</translation>
 <translation id="813082847718468539">Sitegegevens bekijken</translation>
 <translation id="127353061808977798">Lettertypen en coderingen</translation>
@@ -1414,7 +1411,7 @@ Resterende tijd berekenen</translation>
 <translation id="7092106376816104">Uitzonderingen voor pop-ups</translation>
 <translation id="4830475881783902092">Klant-id:</translation>
 <translation id="4600958291864306415">genereren...</translation>
-<translation id="8594787581355215556">Aangemeld als <ph name="USER_EMAIL_ADDRESS"/>. Beheer uw gesynchroniseerde gegevens via <ph name="BEGIN_LINK"/>Google Dashboard<ph name="END_LINK"/>.</translation>
+<translation id="2669230071943955873">Aangemeld als <ph name="USER_EMAIL_ADDRESS"/>. Beheer uw gesynchroniseerde gegevens via <ph name="BEGIN_LINK"/>BitPop Dashboard<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Toevoegen aan startscherm</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> kan de installatie niet voltooien, maar wordt nog steeds uitgevoerd via de schijfkopie.</translation>
 <translation id="1952837113524940233">Nieuwe netwerkhandlers inschakelen</translation>
@@ -1434,7 +1431,7 @@ Resterende tijd berekenen</translation>
 <translation id="4250680216510889253">Nee</translation>
 <translation id="5109044022078737958">Mia</translation>
 <translation id="6291953229176937411">&amp;Toon in Finder</translation>
-<translation id="8598687241883907630">Uw Google-account ontkoppelen...</translation>
+<translation id="3684341060830149235">Uw Facebook/BitPop-account ontkoppelen...</translation>
 <translation id="2556718757702023317">Als u '<ph name="FILE_NAME"/>' offline wilt opslaan, moet u <ph name="TOTAL_FILE_SIZE"/> extra ruimte vrijmaken:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>Maak bestanden los die u niet meer offline gaat bekijken.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Verwijder bestanden uit uw map 'Downloads'.<ph name="MARKUP_5"/></translation>
@@ -1520,7 +1517,7 @@ Wilt u <ph name="CONTROL_PANEL_APPLET_NAME"/> starten?</translation>
 <translation id="4181898366589410653">Er is geen intrekkingsmechanisme gevonden in het servercertificaat.</translation>
 <translation id="1515163294334130951">Starten</translation>
 <translation id="6914291514448387591">Voor het uitvoeren van <ph name="PLUGIN_NAME"/> is uw toestemming nodig.</translation>
-<translation id="1123316951456119629">Als u uw Google-account ontkoppelt van <ph name="PRODUCT_NAME"/>, blijven uw gegevens op deze computer staan, maar worden wijzigingen niet meer gesynchroniseerd met uw Google-account. Gegevens die al zijn opgeslagen in uw Google-account, blijven hierin opgeslagen tot u deze via <ph name="BEGIN_LINK"/>Google Dashboard<ph name="END_LINK"/> verwijdert.</translation>
+<translation id="3144050057163527741">Als u uw BitPop-account ontkoppelt van <ph name="PRODUCT_NAME"/>, blijven uw gegevens op deze computer staan, maar worden wijzigingen niet meer gesynchroniseerd met uw Google-account. Gegevens die al zijn opgeslagen in uw Google-account, blijven hierin opgeslagen tot u deze via <ph name="BEGIN_LINK"/>Google Dashboard<ph name="END_LINK"/> verwijdert.</translation>
 <translation id="8705331520020532516">Serienummer</translation>
 <translation id="1665770420914915777">Gebruik de pagina 'Nieuw tabblad'</translation>
 <translation id="5456409301717116725">Deze extensie bevat het sleutelbestand '<ph name="KEY_PATH"/>'. Dit is waarschijnlijk niet uw bedoeling.</translation>
@@ -1734,8 +1731,8 @@ Wilt u <ph name="CONTROL_PANEL_APPLET_NAME"/> starten?</translation>
 <translation id="7434823369735508263">Brits Dvorak-toetsenbord</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> dagen</translation>
 <translation id="8825366169884721447">Deze extensie heeft de koptekst voor het verzoek '<ph name="HEADER_NAME"/>' van een netwerkverzoek niet kunnen aanpassen, omdat de aanpassing zorgde voor een conflict met een andere extensie (<ph name="EXTENSION_NAME"/>).</translation>
-<translation id="5308845175611284862">Met synchronisatie van <ph name="PRODUCT_NAME"/> kunt u uw gegevens (zoals bladwijzers en voorkeuren) gemakkelijk delen tussen computers.
-        <ph name="PRODUCT_NAME"/> synchroniseert uw gegevens door deze online op te slaan via Google wanneer u zich aanmeldt met uw Google-account.</translation>
+<translation id="291445075019511713">Met synchronisatie van <ph name="PRODUCT_NAME"/> kunt u uw gegevens (zoals bladwijzers en voorkeuren) gemakkelijk delen tussen computers.
+        <ph name="PRODUCT_NAME"/> synchroniseert uw gegevens door deze online op te slaan via BitPop wanneer u zich aanmeldt met uw BitPop-account.</translation>
 <translation id="1707463636381878959">Dit netwerk delen met andere gebruikers</translation>
 <translation id="3024663005179499861">Onjuist beleidstype</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -1931,7 +1928,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="1601560923496285236">Toepassen</translation>
 <translation id="2390045462562521613">Dit netwerk vergeten</translation>
 <translation id="3348038390189153836">Verwisselbaar apparaat gedetecteerd</translation>
-<translation id="8005540215158006229">Chrome is bijna gereed.</translation>
+<translation id="3674182693516842999">BitPop is bijna gereed.</translation>
 <translation id="1666788816626221136">U heeft certificaten die niet in een van de andere categorieën vallen:</translation>
 <translation id="5698727907125761952">Officiële artiest</translation>
 <translation id="4821935166599369261">&amp;Profiling ingeschakeld</translation>
@@ -2084,7 +2081,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="748138892655239008">Basisvereisten voor certificaten</translation>
 <translation id="457386861538956877">Meer...</translation>
 <translation id="9210991923655648139">Toegankelijk voor script:</translation>
-<translation id="4152177296285305182">Alleen iemand die uw wachtwoordzin kent, kan uw geëncrypte gegevens lezen. De wachtwoordzin wordt niet naar Google verzonden of door Google opgeslagen. Als u uw wachtwoordzin vergeet, moet u de synchronisatie opnieuw instellen.</translation>
+<translation id="8792136381897173209">Alleen iemand die uw wachtwoordzin kent, kan uw geëncrypte gegevens lezen. De wachtwoordzin wordt niet naar BitPop verzonden of door Google opgeslagen. Als u uw wachtwoordzin vergeet, moet u de synchronisatie opnieuw instellen.</translation>
 <translation id="1950295184970569138">* Google-profielfoto (laden)</translation>
 <translation id="8063491445163840780">Tabblad 4 activeren</translation>
 <translation id="5473544328731861874">Intentie verwijderen</translation>
@@ -2243,7 +2240,6 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="2563185590376525700">Kikker</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> kan geen verbinding maken met <ph name="NETWORK_ID"/>. Probeer een ander netwerk of probeer het opnieuw.</translation>
 <translation id="2086712242472027775">Uw account werkt niet op <ph name="PRODUCT_NAME"/>. Neem contact op met uw domeinbeheer of gebruik een gewoon Google-account om u aan te melden.</translation>
-<translation id="1373074393717692190">Meld u met uw Google-account aan bij <ph name="PRODUCT_NAME"/> om gepersonaliseerde browserfuncties op te slaan op internet, zodat u op elk mobiele apparaat toegang heeft tot deze instellingen via <ph name="PRODUCT_NAME"/>. U wordt ook automatisch aangemeld bij uw favoriete Google-services.</translation>
 <translation id="7222232353993864120">E-mailadres</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="7175353351958621980">Geladen via:</translation>
@@ -2498,7 +2494,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="1752977958630076881">Lokale gegevens alleen bewaren totdat ik mijn browser sluit</translation>
 <translation id="7853202427316060426">Activiteit</translation>
 <translation id="8550022383519221471">De synchronisatieservice is niet beschikbaar voor uw domein.</translation>
-<translation id="1436238710092600782">Een Google-account maken</translation>
+<translation id="8612897762498195031">Een BitPop-account maken</translation>
 <translation id="3355823806454867987">Proxyinstellingen wijzigen...</translation>
 <translation id="2882324896611949356">Hiermee wordt het downloaden van Google-contactpersonen ingeschakeld en worden ze weergegeven in de lijst met apps.</translation>
 <translation id="4780374166989101364">Hiermee worden experimentele extensie-API's ingeschakeld. U kunt geen extensies naar de extensiegalerij uploaden die gebruikmaken van experimentele API's.</translation>
@@ -2599,7 +2595,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="8314066201485587418">Cookies en andere sitegegevens wissen wanneer ik mijn browser sluit</translation>
 <translation id="4094105377635924481">Groep toevoegen aan het contextmenu</translation>
 <translation id="765676359832457558">Geavanceerde instellingen verbergen...</translation>
-<translation id="7626032353295482388">Welkom bij Chrome</translation>
+<translation id="185658551912723674">Welkom bij BitPop</translation>
 <translation id="8655295600908251630">Kanaal</translation>
 <translation id="8250690786522693009">Latijn</translation>
 <translation id="2119721408814495896">Voor de connector voor <ph name="CLOUD_PRINT_NAME"/> moet het Microsoft XML Paper Specification Essentials Pack zijn geïnstalleerd.</translation>
@@ -2987,7 +2983,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="9072684888578654899">{0}&lt;p&gt;{/0}
           Tabbladen die u in Chrome op uw andere apparaten heeft geopend, worden hier weergegeven.
           {0}&lt;/p&gt;{/0}
-          {0}&lt;a href=&quot;#enablesync&quot;&gt;{/0}
+          {0}&lt;a href="#enablesync"&gt;{/0}
           Synchronisatie inschakelen.
           {0}&lt;/p&gt;{/0}</translation>
 <translation id="889901481107108152">Dit experiment is niet beschikbaar op uw platform.</translation>
@@ -3137,7 +3133,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="6007237601604674381">Verplaatsen mislukt. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Geen tijdelijk zipbestand gemaakt tijdens inpakken.</translation>
 <translation id="1881456419707551346">Verbindingsdetails</translation>
-<translation id="1064912851688322329">Uw Google-account ontkoppelen</translation>
+<translation id="1175819364738375266">Uw Facebook/BitPop-account ontkoppelen</translation>
 <translation id="1294298200424241932">Vertrouwensinstellingen bewerken:</translation>
 <translation id="1407135791313364759">Alles openen</translation>
 <translation id="1434928358870966081">Versneld 2D-canvas uitschakelen</translation>
@@ -3337,7 +3333,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Moet een geldige URL zijn</translation>
 <translation id="3464726836683998962">Mobiele gegevensroaming uitschakelen</translation>
-<translation id="8986494364107987395">Automatisch gebruiksstatistieken en crashmeldingen naar Google verzenden</translation>
+<translation id="7133428520955276418">Automatisch gebruiksstatistieken en crashmeldingen naar House of Life verzenden</translation>
 <translation id="7070714457904110559">Schakelt experimentele extensies in voor de geolocatiefunctie. Omvat locatie-API's voor het besturingssysteem (indien beschikbaar), en het versturen van aanvullende gegevens over lokale netwerkconfiguraties naar de locatieservice van Google, voor een nauwkeurigere plaatsbepaling.</translation>
 <translation id="6701535245008341853">Kan profiel niet laden.</translation>
 <translation id="8303655282093186569">Invoerinstellingen voor Pinyin</translation>
@@ -3373,7 +3369,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="4762295713053835808">Persoonlijke items</translation>
 <translation id="3445092916808119474">Primair maken</translation>
 <translation id="6374100501221763867">Hardware-versnelde videodecodering uitschakelen.</translation>
-<translation id="7477347901712410606">Als u uw wachtwoordzin bent vergeten, stopt u Synchroniseren en stelt u de functie opnieuw in via <ph name="BEGIN_LINK"/>Google Dashboard<ph name="END_LINK"/>.</translation>
+<translation id="1257410854647617646">Als u uw wachtwoordzin bent vergeten, stopt u Synchroniseren en stelt u de functie opnieuw in via <ph name="BEGIN_LINK"/>BitPop Dashboard<ph name="END_LINK"/>.</translation>
 <translation id="3085235303151103497">Foutopsporing voor pakketapps inschakelen.</translation>
 <translation id="2645575947416143543">Als u echter werkzaam bent bij een organisatie die zelf certificaten uitgeeft en u probeert contact te leggen met een interne website van de organisatie met zo'n certificaat, kunt u dit probleem wellicht veilig oplossen. U kunt het hoofdcertificaat van uw organisatie importeren als 'root certificate'. Certificaten die door uw organisatie zijn uitgegeven of geverifieerd, worden toegestaan. Deze fout wordt niet meer weergegeven als u contact legt met een interne website. Neem contact op met de ondersteuningsafdeling van uw organisatie om een nieuw hoofdcertificaat toe te voegen aan uw computer.</translation>
 <translation id="1056898198331236512">Waarschuwing</translation>
@@ -3574,7 +3570,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="4971925105143343452">Gedeeltelijk</translation>
 <translation id="3454157711543303649">Activering voltooid</translation>
 <translation id="884923133447025588">Geen intrekkingsmechanisme gevonden.</translation>
-<translation id="7801746894267596941">Alleen iemand die uw wachtwoordzin kent, kan uw geëncrypte gegevens lezen. De wachtwoordzin wordt niet naar Google verzonden of door Google opgeslagen. Als u uw wachtwoordzin vergeet, moet u</translation>
+<translation id="2077681924461579449">Alleen iemand die uw wachtwoordzin kent, kan uw geëncrypte gegevens lezen. De wachtwoordzin wordt niet naar BitPop verzonden of door Google opgeslagen. Als u uw wachtwoordzin vergeet, moet u</translation>
 <translation id="5406835729608468430">Weergeven met…</translation>
 <translation id="291886813706048071">U kunt vanaf hier zoeken met <ph name="SEARCH_ENGINE"/></translation>
 <translation id="556042886152191864">Knop</translation>
@@ -3758,7 +3754,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="8948393169621400698">Plug-ins altijd toestaan op <ph name="HOST"/></translation>
 <translation id="6527303717912515753">Delen</translation>
 <translation id="4285498937028063278">Losmaken</translation>
-<translation id="2588322182880276190">Chrome-logo</translation>
+<translation id="193954205383164322">BitPop-logo</translation>
 <translation id="7893008570150657497">Foto's, muziek en andere media van uw computer openen</translation>
 <translation id="5449624072515809082">Autocorrectie van tekst tijdens het typen inschakelen. Synchrone spellingcontrole is niet compatibel met deze functie.</translation>
 <translation id="8291808604460602261">Web Intents toestemming geven mij verbinding te laten maken voor mijn applicaties.</translation>
@@ -4101,7 +4097,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="3021678814754966447">&amp;Framebron weergeven</translation>
 <translation id="8601206103050338563">TLS WWW-clientverificatie</translation>
 <translation id="1692799361700686467">Cookies van meerdere sites toegestaan.</translation>
-<translation id="5187295959347858724">U bent nu aangemeld bij <ph name="SHORT_PRODUCT_NAME"/>. Uw bladwijzers, geschiedenis en andere instellingen worden gesynchroniseerd met uw Google-account.</translation>
+<translation id="6928105098560478094">U bent nu aangemeld bij <ph name="SHORT_PRODUCT_NAME"/>. Uw bladwijzers, geschiedenis en andere instellingen worden gesynchroniseerd met uw BitPop-account.</translation>
 <translation id="7381706763856392587">'<ph name="FILENAME"/>' verwijderd</translation>
 <translation id="529232389703829405">U heeft op <ph name="DATE"/> <ph name="DATA_AMOUNT"/> aan data aangeschaft</translation>
 <translation id="7419106976560586862">Profielpad</translation>
@@ -4169,7 +4165,7 @@ Openbaar exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="6692173217867674490">Slechte wachtwoordzin</translation>
 <translation id="5550431144454300634">Invoer automatisch corrigeren</translation>
 <translation id="3308006649705061278">Organisatie-eenheid (OU)</translation>
-<translation id="8912362522468806198">Google-account</translation>
+<translation id="9034203691147880734">BitPop-account</translation>
 <translation id="4839847978919684242"><ph name="SELCTED_FILES_COUNT"/> items geselecteerd</translation>
 <translation id="4443536555189480885">&amp;Help</translation>
 <translation id="6993309531105463648">Automatische plaatsing van vensters uitschakelen voor één en twee browser-/appvensters.</translation>
@@ -4540,7 +4536,7 @@ Druk op een toets om door te gaan met verkennen.</translation>
 <translation id="1177437665183591855">Onbekende fout met servercertificaat</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> wil gebruikmaken van uw camera en microfoon.</translation>
 <translation id="8467473010914675605">Koreaanse invoermethode</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> synchroniseert uw gegevens veilig met uw Google-account. Houd alles gesynchroniseerd of pas gesynchroniseerde gegevenstypen en coderingsinstellingen aan.</translation>
+<translation id="7938022885346429483"><ph name="PRODUCT_NAME"/> synchroniseert uw gegevens veilig met uw BitPop-account. Houd alles gesynchroniseerd of pas gesynchroniseerde gegevenstypen en coderingsinstellingen aan.</translation>
 <translation id="2639739919103226564">Status:</translation>
 <translation id="824543159844843373">Item 3 in het opstartprogramma activeren</translation>
 <translation id="6923900367903210484">Auteursrecht</translation>
@@ -4568,7 +4564,7 @@ Druk op een toets om door te gaan met verkennen.</translation>
 <translation id="2101797668776986011">Pepper 3D</translation>
 <translation id="1581962803218266616">Toon in Finder</translation>
 <translation id="9100765901046053179">Geavanceerde instellingen</translation>
-<translation id="203168018648013061">Synchronisatiefout: stel synchronisatie opnieuw in via Google Dashboard.</translation>
+<translation id="2936690273131526650">Synchronisatiefout: stel synchronisatie opnieuw in via BitPop Dashboard.</translation>
 <translation id="1405126334425076373">Muisaanwijzer</translation>
 <translation id="6671493224572088110"><ph name="VIDEO_NAME"/> bekijken</translation>
 <translation id="6096326118418049043">X.500-naam</translation>
@@ -4689,7 +4685,7 @@ Druk op een toets om door te gaan met verkennen.</translation>
 <translation id="2050339315714019657">Staand</translation>
 <translation id="6978839998405419496"><ph name="NUMBER_ZERO"/> days ago</translation>
 <translation id="8273027367978594412">Als deze optie is ingeschakeld, is er een gastgebruiker beschikbaar in de desktopversie van Chrome.</translation>
-<translation id="8188199528179562676">Als u uw Google-account ontkoppelt van <ph name="PRODUCT_NAME"/>, blijven uw gegevens op dit mobiele apparaat staan, maar worden wijzigingen niet meer gesynchroniseerd met uw Google-account. Gegevens die al zijn opgeslagen in uw Google-account, blijven hierin opgeslagen tot u deze via <ph name="BEGIN_LINK"/>Google Dashboard<ph name="END_LINK"/> verwijdert.</translation>
+<translation id="3972854587947107012">Als u uw BitPop-account ontkoppelt van <ph name="PRODUCT_NAME"/>, blijven uw gegevens op dit mobiele apparaat staan, maar worden wijzigingen niet meer gesynchroniseerd met uw Google-account. Gegevens die al zijn opgeslagen in uw Google-account, blijven hierin opgeslagen tot u deze via <ph name="BEGIN_LINK"/>Google Dashboard<ph name="END_LINK"/> verwijdert.</translation>
 <translation id="8261490674758214762">De apps/extensies kunnen nu het volgende doen:</translation>
 <translation id="5112577000029535889">&amp;Hulpprogramma's voor ontwikkelaars</translation>
 <translation id="2301382460326681002">Hoofddirectory van extensie is ongeldig.</translation>

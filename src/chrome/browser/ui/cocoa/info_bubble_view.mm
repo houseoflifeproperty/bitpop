@@ -27,6 +27,9 @@
 - (void)drawRect:(NSRect)rect {
   // Make room for the border to be seen.
   NSRect bounds = [self bounds];
+  if (arrowLocation_ == info_bubble::kBottomCenter) {
+    bounds.origin.y += info_bubble::kBubbleArrowHeight;
+  }
   if (arrowLocation_ != info_bubble::kNoArrow) {
     bounds.size.height -= info_bubble::kBubbleArrowHeight;
   }
@@ -54,20 +57,29 @@
       dX = NSWidth(bounds) - info_bubble::kBubbleArrowXOffset -
           info_bubble::kBubbleArrowWidth;
       break;
+    case info_bubble::kBottomCenter:
+      dX = (NSWidth(bounds) - info_bubble::kBubbleArrowWidth) / 2;
+      break;
     case info_bubble::kNoArrow:
       break;
     default:
       NOTREACHED();
       break;
   }
-  NSPoint arrowStart = NSMakePoint(NSMinX(bounds), NSMaxY(bounds));
+  NSPoint arrowStart =
+      (arrowLocation_ != info_bubble::kBottomCenter) ?
+          NSMakePoint(NSMinX(bounds), NSMaxY(bounds)) :
+          NSMakePoint(NSMinX(bounds), NSMinY(bounds));
+
   arrowStart.x += dX;
   [bezier moveToPoint:NSMakePoint(arrowStart.x, arrowStart.y)];
   if (arrowLocation_ != info_bubble::kNoArrow) {
-    [bezier lineToPoint:NSMakePoint(arrowStart.x +
-                                        info_bubble::kBubbleArrowWidth / 2.0,
-                                    arrowStart.y +
-                                        info_bubble::kBubbleArrowHeight)];
+    [bezier lineToPoint:NSMakePoint(
+        arrowStart.x +
+            info_bubble::kBubbleArrowWidth / 2.0,
+        arrowStart.y +
+            ((arrowLocation_ != info_bubble::kBottomCenter) ? 1 : -1) *
+            info_bubble::kBubbleArrowHeight)];
   }
   [bezier lineToPoint:NSMakePoint(arrowStart.x + info_bubble::kBubbleArrowWidth,
                                   arrowStart.y)];
@@ -78,12 +90,20 @@
 
 - (NSPoint)arrowTip {
   NSRect bounds = [self bounds];
-  CGFloat tipXOffset =
-      info_bubble::kBubbleArrowXOffset + info_bubble::kBubbleArrowWidth / 2.0;
-  CGFloat xOffset =
-      (arrowLocation_ == info_bubble::kTopRight) ? NSMaxX(bounds) - tipXOffset :
-                                                   NSMinX(bounds) + tipXOffset;
-  NSPoint arrowTip = NSMakePoint(xOffset, NSMaxY(bounds));
+  CGFloat xOffset = 0;
+  if (arrowLocation_ != info_bubble::kBottomCenter) {
+    CGFloat tipXOffset =
+        info_bubble::kBubbleArrowXOffset + info_bubble::kBubbleArrowWidth / 2.0;
+    xOffset =
+        (arrowLocation_ == info_bubble::kTopRight) ?
+            NSMaxX(bounds) - tipXOffset :
+            NSMinX(bounds) + tipXOffset;
+  } else
+    xOffset = NSMinX(bounds) + NSWidth(bounds) / 2;
+
+  NSPoint arrowTip = NSMakePoint(xOffset,
+      (arrowLocation_ == info_bubble::kBottomCenter) ? NSMinY(bounds) :
+                                                       NSMaxY(bounds));
   return arrowTip;
 }
 

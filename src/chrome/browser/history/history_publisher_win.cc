@@ -43,7 +43,7 @@ void AddRegisteredIndexers(
 namespace history {
 
 const wchar_t* const HistoryPublisher::kRegKeyRegisteredIndexersInfo =
-    L"Software\\Google\\Google Chrome\\IndexerPlugins";
+    L"Software\\HouseOfLife\\BitPop\\IndexerPlugins";
 
 // static
 double HistoryPublisher::TimeToUTCVariantTime(const base::Time& time) {

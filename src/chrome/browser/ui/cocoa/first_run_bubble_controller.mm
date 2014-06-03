@@ -51,7 +51,7 @@
     // showing up so early in the startup sequence. As a workaround, close it
     // automatically after a few seconds if it doesn't become key.
     // http://crbug.com/52726
-    [self performSelector:@selector(closeIfNotKey) withObject:nil afterDelay:3];
+    // [self performSelector:@selector(closeIfNotKey) withObject:nil afterDelay:3];
   }
   return self;
 }
@@ -86,6 +86,12 @@
 - (void)closeIfNotKey {
   if (![[self window] isKeyWindow])
     [self close];
+}
+
+- (void)windowDidResignKey:(NSNotification*)notification {
+}
+
+- (void)parentWindowWillClose:(NSNotification*)notification {
 }
 
 - (IBAction)onChange:(id)sender {

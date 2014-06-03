@@ -15,7 +15,7 @@
 
 // Well known SID for the system principal.
 const wchar_t kSystemPrincipalSid[] = L"S-1-5-18";
-const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\ChromeCrashServices";
+const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\BitPopCrashServices";
 
 // Returns the custom info structure based on the dll in parameter
 google_breakpad::CustomClientInfo* GetCustomInfo(const wchar_t* dll_path) {

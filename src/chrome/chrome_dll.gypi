@@ -224,6 +224,14 @@
               ],
               'postbuilds': [
                 {
+                  'postbuild_name': 'Copy Sparkle.framework',
+                  'action': [
+                    '../build/mac/copy_framework_unversioned.sh',
+                    '${BUILT_PRODUCTS_DIR}/Sparkle.framework',
+                    '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks',
+                  ],
+                },
+                {
                   # This step causes an error to be raised if the .order file
                   # does not account for all global text symbols.  It
                   # validates the completeness of the .order file.

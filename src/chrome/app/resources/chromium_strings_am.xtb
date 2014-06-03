@@ -1,55 +1,54 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="am">
 <translation id="6676384891291319759">በይነመረብን ተዳረስ</translation>
-<translation id="6373523479360886564">እርግጠኛ ነዎት Chromiumን ማራገፍ ይፈልጋሉ?</translation>
-<translation id="6510925080656968729">Chromiumን ያራግፉ</translation>
-<translation id="6893813176749746474">Chromium ተዘምኗል፣ ግን ቢያንስ ለ30 ቀናት አልተጠቀሙበትም።</translation>
-<translation id="1550579416447684632">የChromium መተግበሪያዎችን አስጅምር</translation>
-<translation id="4267347018362241535">Chromium የመተግበሪያ አስጀማሪ ለChromium መተግበሪያዎች የተዘጋጀ በንጥል ቋሚ የመሳሪያ ሥርዓት ነው።</translation>
+<translation id="8447784615389818621">እርግጠኛ ነዎት BitPopን ማራገፍ ይፈልጋሉ?</translation>
+<translation id="100741878661450640">BitPopን ያራግፉ</translation>
+<translation id="4301276314211054820">BitPop ተዘምኗል፣ ግን ቢያንስ ለ30 ቀናት አልተጠቀሙበትም።</translation>
+<translation id="8935261719622405725">የBitPop መተግበሪያዎችን አስጅምር</translation>
+<translation id="2556535128417126306">BitPop የመተግበሪያ አስጀማሪ ለBitPop መተግበሪያዎች የተዘጋጀ በንጥል ቋሚ የመሳሪያ ሥርዓት ነው።</translation>
 <translation id="2770231113462710648">ነባሪ አሳሽን ወደዚህ ቀይር፦</translation>
-<translation id="6613594504749178791">ለውጦችዎ Chromium በሚያስጀምሩበት ቀጣዩ ጊዜ ላይ ይተገበራሉ።</translation>
-<translation id="3748537968684000502">ደህንነቱ የተጠበቀ የChromium ገጽ እየተመለከቱ ነዎት።</translation>
-<translation id="8971920611044657379">Chromium ክፍለ ገጸ ድር</translation>
+<translation id="6870152852581894991">ለውጦችዎ BitPop በሚያስጀምሩበት ቀጣዩ ጊዜ ላይ ይተገበራሉ።</translation>
+<translation id="3588014340702790340">ደህንነቱ የተጠበቀ የBitPop ገጽ እየተመለከቱ ነዎት።</translation>
+<translation id="6789998774111513164">BitPop ክፍለ ገጸ ድር</translation>
 <translation id="1065672644894730302">አማራጮችዎ ሊነበቡ አልቻሉም።
 
 አንዳንድ ባህሪያት ላይገኙ ይችላሉ፣ እና በአማራጮች ላይ የተደረጉ ለውጦች አይቀመጡም።</translation>
-<translation id="4222661289444749267">የChromium ክፈፍ ዝማኔ።</translation>
-<translation id="2843244238218937196">Chromium አዘጋጅ</translation>
-<translation id="7128196614940529818">Chromium ክፈፍ አስቀድሞ የተጫነ እና ለሁሉም የዚህ ኮምፒውተር ተጠቃሚዎች የሚገኝ ነው። Chromium ክፈፍ በተጠቃሚ ደረጃ ላይ መጫን ከፈለጉ መጀመሪያ በአስተዳዳሪው የተጫነውን የስርዓት-ደረጃ ስሪት ማራገፍ አለብዎት።</translation>
+<translation id="4901429675189043920">የBitPop ክፈፍ ዝማኔ።</translation>
+<translation id="1132852132282742543">BitPop አዘጋጅ</translation>
+<translation id="7155774694068736041">BitPop ክፈፍ አስቀድሞ የተጫነ እና ለሁሉም የዚህ ኮምፒውተር ተጠቃሚዎች የሚገኝ ነው። BitPop ክፈፍ በተጠቃሚ ደረጃ ላይ መጫን ከፈለጉ መጀመሪያ በአስተዳዳሪው የተጫነውን የስርዓት-ደረጃ ስሪት ማራገፍ አለብዎት።</translation>
 <translation id="731644333568559921">&amp;Chromium OSን አዘምን</translation>
-<translation id="7421823331379285070">Chromium Windows XP ወይም ከዚያ በኋላ ይፈልጋል። አንዳንድ ባህሪያት ላይሰሩ ይችላሉ።</translation>
+<translation id="5284421695473942517">BitPop Windows XP ወይም ከዚያ በኋላ ይፈልጋል። አንዳንድ ባህሪያት ላይሰሩ ይችላሉ።</translation>
 <translation id="3549345495227188780">በChromium OS ይጀምሩ</translation>
-<translation id="4330297532943865716">በስርዓቱ ላይ የሚጋጭ የChromium እና Chromium Frame ጭነት ተገኝቷል። እባክዎ ያራግፉት እና እንደገና ይሞክሩ።</translation>
-<translation id="6953661834318318668">Chromium የመሣሪያ አሞሌ</translation>
-<translation id="7097100943370017396">የስርዓተ ክወናዎ አገልግሎት የማይሰጥ ጊዜ ያለፈት ስለሆነ Chromium ከአሁን በኋላ አይዘምንም ያለው።</translation>
-<translation id="2245147136185581459">Chromium የተያዥ መተላለፊያ አዋቂ</translation>
-<translation id="4285930937574705105">ተለይቶ ባልታወቀ ስህተት ምክንያት ጭነት ከሽፏል። Chromium አሁን እያሄደ ከሆነ እባክዎ ይዝጉትና እንደገና ይሞክሩ።</translation>
-<translation id="2589479092236095792">የChromium ራስ-ሙላ ቅንብሮች</translation>
-<translation id="658492233547000995">መተግበሪያዎችዎን ለማስጀመር የChromium መተግበሪያዎች አስጀማሪውን ይጠቀሙ።</translation>
+<translation id="8363397932717822970">በስርዓቱ ላይ የሚጋጭ የBitPop እና BitPop Frame ጭነት ተገኝቷል። እባክዎ ያራግፉት እና እንደገና ይሞክሩ።</translation>
+<translation id="8235603028098851915">BitPop የመሣሪያ አሞሌ</translation>
+<translation id="5953515305183787825">የስርዓተ ክወናዎ አገልግሎት የማይሰጥ ጊዜ ያለፈት ስለሆነ BitPop ከአሁን በኋላ አይዘምንም ያለው።</translation>
+<translation id="7230682351542979557">BitPop የተያዥ መተላለፊያ አዋቂ</translation>
+<translation id="325440606879482824">ተለይቶ ባልታወቀ ስህተት ምክንያት ጭነት ከሽፏል። BitPop አሁን እያሄደ ከሆነ እባክዎ ይዝጉትና እንደገና ይሞክሩ።</translation>
+<translation id="7224939653007212692">የBitPop ራስ-ሙላ ቅንብሮች</translation>
+<translation id="3078552028547324322">መተግበሪያዎችዎን ለማስጀመር የBitPop መተግበሪያዎች አስጀማሪውን ይጠቀሙ።</translation>
 <translation id="3555616473548901994">ተራግፎ አልቋል።</translation>
-<translation id="3674409928058572366">Chromium መተግበሪያ አስተናጋጅ</translation>
-<translation id="2886012850691518054">ከተፈለገ፦ የአጠቃቀም ስታቲስቲክስ እና የብልሽት ሪፖርቶችን ወደ Google በራስ-ሰር በመላክ Chromium የተሻለ እንዲሆን ያግዙ።</translation>
-<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
-<translation id="1989424089625731201">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ ያቀረበው የእውቅና ማረጋገጫ ስህተቶች አሉበት። Chromium ስህተቶች ያሉት የእውቅና ማረጋገጫ መጠቀም አይችልም እና ለመገናኘት የሞከሩትን የጣቢያ ማንነት ማረጋገጥ አይችልም።</translation>
-<translation id="3103660991484857065">ጫኚው መዝገቡን መበተን አልቻለም። እባክዎ Chromiumን እንደገና ያውርዱት።</translation>
-<translation id="872034308864968620">Chromium ጀርባ ላይ ያሂድ</translation>
-<translation id="5109068449432240255">አዎ ከChromium ውጣ</translation>
-<translation id="4320129595801648679">የChromium አዲስ የትር ገጽ መልክ ተቀይሯል። እነዚህ የመለያ ስሞችን ጠቅ በማድረግ በክፍሎች መካከል ይቀይሩ። Chromium ምርጫዎን ለሚቀጥለው ጊዜ ያስታውሰዋል።</translation>
+<translation id="5814137742095860156">BitPop መተግበሪያ አስተናጋጅ</translation>
+<translation id="9205983754412543288">ከተፈለገ፦ የአጠቃቀም ስታቲስቲክስ እና የብልሽት ሪፖርቶችን ወደ Google በራስ-ሰር በመላክ BitPop የተሻለ እንዲሆን ያግዙ።</translation>
+<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="6259082392093297310">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ ያቀረበው የእውቅና ማረጋገጫ ስህተቶች አሉበት። BitPop ስህተቶች ያሉት የእውቅና ማረጋገጫ መጠቀም አይችልም እና ለመገናኘት የሞከሩትን የጣቢያ ማንነት ማረጋገጥ አይችልም።</translation>
+<translation id="3801183610358973379">ጫኚው መዝገቡን መበተን አልቻለም። እባክዎ BitPopን እንደገና ያውርዱት።</translation>
+<translation id="4450789702440326676">BitPop ጀርባ ላይ ያሂድ</translation>
+<translation id="2963590958538393837">አዎ ከBitPop ውጣ</translation>
+<translation id="8031724302809093115">የBitPop አዲስ የትር ገጽ መልክ ተቀይሯል። እነዚህ የመለያ ስሞችን ጠቅ በማድረግ በክፍሎች መካከል ይቀይሩ። Chromium ምርጫዎን ለሚቀጥለው ጊዜ ያስታውሰዋል።</translation>
 <translation id="1480489203462860648">ይሞክሩት፣ አስቀድሞ ተጭኗል</translation>
-<translation id="3032787606318309379">ወደ Chromium በማከል ላይ...</translation>
-<translation id="4831257561365056138">የChromium መተግበሪያ አስጀማሪን አራግፍ</translation>
-<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>ማስጠንቀቂያ፦<ph name="END_BOLD"/> Chromium ቅጥያዎች የአሰሳ ታሪክዎን እንዳይመዘግቡ መከልከል አይችልም። ይህን ቅጥያ ማንነትን በማያሳውቅ ሁነት ላይ ለማሰናከል ይህን አማራጭ አይምረጡ።</translation>
-<translation id="985602178874221306">የChromium ደራሲዎች</translation>
-<translation id="8628626585870903697">Chromium የህትመት ቅድመ እይታ እንዲሰራ የሚያስፈልገው የፒ ዲ ኤፍ ማያውን አያካትትም።</translation>
-<translation id="7138853919861947730">Chromium የማሰስ ተሞክሮዎን ለማሻሻል የድር አገልግሎቶችን ሊጠቀም ይችላል።</translation>
-<translation id="466053073629175099">አሁን Chromium ውስጥ ገብተዋል! ዕልባቶችዎ፣ ታሪክዎ እና ሌሎች ቅንብሮችዎ ከGoogle መለያዎ ጋር ይመሳሰላሉ።</translation>
-<translation id="4179848566211676653">ከChromium ውጣ</translation>
-<translation id="3849925841547750267">በሚያሳዝን ሁኔታ Mozilla Firefox እያሄደ ባለበት ጊዜ በእሱ ላይ ያስቀመጡት ቅንብሮችዎ አይገኙም። እነዚህን ቅንብሮች  ወደ Chromium ለማስመጣት ስራዎን ያስቀምጡና ሁሉንም የFirefox መስኮቶችን ይዝጉ። ከዚያም ቀጥልን ይጫኑ።</translation>
-<translation id="7771626876550251690">በዚህ አጋጣሚ በእውቅና ማረጋገጫው ውስጥ የተዘርዘረው አድራሻ አሳሽዎ ሊሄድበት ከሞከረው የድር ጣቢያው አድራሻ ጋር አይዛመድም። ለዚህ ሊሆን የሚችል አንድ ምክንያት ግንኙነቶችዎ የተለየ የድር ጣቢያ እውቅና ማረጋገጫ እያቀረበ ባለ አጥቂ እየተጠለፈ ሊሆን ይችላል፣ ይሄ አለመዛመድን ያስከትላል። ሌላ ሊሆን የሚችል ምክንያት አገልጋዩ እርስዎ ለመጎብኘት የሚሞክሩትን ጨምሮ ለበርካታ ድር ጣቢያዎች ተመሳሳዩን የእውቅና ማረጋገጫ እንዲያሳይ ተደርጎ የተዋቀረ ሊሆን ይችላል፣ ምንም እንኳ ያ የእውቅና ማረጋገጫ ለሁሉም ድር ጣቢያዎቹ የሚሰራ ባይሆንም እንኳ። Chromium እርግጠኛ ሆኖ &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;ን እንደደረሱ ሊነግርዎት ይችላል፣ ግን ያ እርስዎ ለመድረስ ካሰቡት &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ጋር አንድ አይነት መሆኑን ሊያረጋግጥ አይችልም። ከቀጠሉ Chromium ተጨማሪ የስም አለመዛመዶችን አያረጋገጥም።</translation>
-<translation id="2401271577450445716">ወደ
+<translation id="7098153548331126805">ወደ BitPop በማከል ላይ...</translation>
+<translation id="5928487969163300899">የBitPop መተግበሪያ አስጀማሪን አራግፍ</translation>
+<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>ማስጠንቀቂያ፦<ph name="END_BOLD"/> BitPop ቅጥያዎች የአሰሳ ታሪክዎን እንዳይመዘግቡ መከልከል አይችልም። ይህን ቅጥያ ማንነትን በማያሳውቅ ሁነት ላይ ለማሰናከል ይህን አማራጭ አይምረጡ።</translation>
+<translation id="3941397373453695568">BitPop የህትመት ቅድመ እይታ እንዲሰራ የሚያስፈልገው የፒ ዲ ኤፍ ማያውን አያካትትም።</translation>
+<translation id="8155571637339134666">BitPop የማሰስ ተሞክሮዎን ለማሻሻል የድር አገልግሎቶችን ሊጠቀም ይችላል።</translation>
+<translation id="5383732173730790693">አሁን BitPop ውስጥ ገብተዋል! ዕልባቶችዎ፣ ታሪክዎ እና ሌሎች ቅንብሮችዎ ከGoogle መለያዎ ጋር ይመሳሰላሉ።</translation>
+<translation id="6866316083935040427">ከBitPop ውጣ</translation>
+<translation id="4759775690587852534">በሚያሳዝን ሁኔታ Mozilla Firefox እያሄደ ባለበት ጊዜ በእሱ ላይ ያስቀመጡት ቅንብሮችዎ አይገኙም። እነዚህን ቅንብሮች  ወደ BitPop ለማስመጣት ስራዎን ያስቀምጡና ሁሉንም የFirefox መስኮቶችን ይዝጉ። ከዚያም ቀጥልን ይጫኑ።</translation>
+<translation id="2411757162791070146">በዚህ አጋጣሚ በእውቅና ማረጋገጫው ውስጥ የተዘርዘረው አድራሻ አሳሽዎ ሊሄድበት ከሞከረው የድር ጣቢያው አድራሻ ጋር አይዛመድም። ለዚህ ሊሆን የሚችል አንድ ምክንያት ግንኙነቶችዎ የተለየ የድር ጣቢያ እውቅና ማረጋገጫ እያቀረበ ባለ አጥቂ እየተጠለፈ ሊሆን ይችላል፣ ይሄ አለመዛመድን ያስከትላል። ሌላ ሊሆን የሚችል ምክንያት አገልጋዩ እርስዎ ለመጎብኘት የሚሞክሩትን ጨምሮ ለበርካታ ድር ጣቢያዎች ተመሳሳዩን የእውቅና ማረጋገጫ እንዲያሳይ ተደርጎ የተዋቀረ ሊሆን ይችላል፣ ምንም እንኳ ያ የእውቅና ማረጋገጫ ለሁሉም ድር ጣቢያዎቹ የሚሰራ ባይሆንም እንኳ። BitPop እርግጠኛ ሆኖ &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;ን እንደደረሱ ሊነግርዎት ይችላል፣ ግን ያ እርስዎ ለመድረስ ካሰቡት &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ጋር አንድ አይነት መሆኑን ሊያረጋግጥ አይችልም። ከቀጠሉ BitPop ተጨማሪ የስም አለመዛመዶችን አያረጋገጥም።</translation>
+<translation id="2423180989259159758">ወደ
           <ph name="BEGIN_BOLD"/>
-          የChromium ምናሌ &gt;
+          የBitPop ምናሌ &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -59,98 +58,98 @@
           የላን ቅንብሮች
           <ph name="END_BOLD"/>
           ይሂዱና የ«ለእርስዎ ላን ተኪ አገልጋይ ይጠቀሙ»ን አመልካች ሳጥኑን አይምረጡ።</translation>
-<translation id="4330585738697551178">ይህ ሞዱል ከChromium ጋር የሚጋጭ መሆኑ ይታወቃል።</translation>
-<translation id="3190315855212034486">ኧረ ገዳይ! Chromium ብልሽት አጋጥሞታል። አሁን ዳግም ይጀምር?</translation>
-<translation id="6714487516757221107">ምንም የሚዘመን የChromium ወይም Chromium ክፍለ ገጸ ድር ጭነት የለም።</translation>
+<translation id="2886079192271351730">ይህ ሞዱል ከBitPop ጋር የሚጋጭ መሆኑ ይታወቃል።</translation>
+<translation id="8324687802311409372">ኧረ ገዳይ! BitPop ብልሽት አጋጥሞታል። አሁን ዳግም ይጀምር?</translation>
+<translation id="606385048658239900">ምንም የሚዘመን የBitPop ወይም BitPop ክፍለ ገጸ ድር ጭነት የለም።</translation>
 <translation id="3197823471738295152">መሣሪያዎ የተዘመነ ነው።</translation>
 <translation id="8551886023433311834">የተዘመነ ለመሆን ጥቂት ብቻ ቀርቷል! ዝማኔውን ለማጠናቀቅ መሣሪያዎን ዳግም ያስጀምሩት።</translation>
-<translation id="8353224596138547809">Chromium የዚህ ጣቢያ ይለፍ ቃልዎን እንዲያስቀምጥልዎ ይፈልጋሉ?</translation>
+<translation id="9090519209458031409">BitPop የዚህ ጣቢያ ይለፍ ቃልዎን እንዲያስቀምጥልዎ ይፈልጋሉ?</translation>
 <translation id="7339898014177206373">አዲሰ መስኮት</translation>
 <translation id="3026202950002788510">ወደ
           <ph name="BEGIN_BOLD"/>
           መተግበሪያዎች &gt; የስርዓት ምርጫዎች &gt; አውታረ መረብ &gt; የላቁ &gt; ተኪዎች
           <ph name="END_BOLD"/>
           ይሂዱና ማንኛውም የተመረጡ ተኪዎችን አይምረጡ።</translation>
-<translation id="4124681358536363708">የChromium ጭነት አቃፊ በስራ ላይ ያለ ይመስላል። እባክዎ ኮምፒውተርዎን ዳግም ያስነሱና እንደገና ይሞክሩ።</translation>
-<translation id="8770560772173120024">Chromium አሁን ተወዳጆች/ዕልባቶችን በማስመጣት ላይ ነው።</translation>
+<translation id="85540521058185027">የBitPop ጭነት አቃፊ በስራ ላይ ያለ ይመስላል። እባክዎ ኮምፒውተርዎን ዳግም ያስነሱና እንደገና ይሞክሩ።</translation>
+<translation id="5710380450759072582">BitPop አሁን ተወዳጆች/ዕልባቶችን በማስመጣት ላይ ነው።</translation>
 <translation id="225614027745146050">እንኳን ደህና መጡ</translation>
-<translation id="9191268552238695869">አንድ አስተዳዳሪ በዚህ ስርዓት ላይ Chromiumን ጭኗል፣ እና ለሁሉም ተጠቃሚዎች ይገኛል። የስርዓት-ደረጃ Chromium የተጠቃሚ-ደረጃ ጭነትዎን አሁን ይተካዋል።</translation>
-<translation id="3509308970982693815">እባክዎ ሁሉንም የChromium መስኮቶችን ይዝጉና እንደገና ይሞክሩ።</translation>
-<translation id="4077262827416206768">ይህ ለውጥ እንዲተገበር እባክዎ የChromium መስኮቶችን ይዝጉና Chromiumን ዳግም ያስጀምሩ።</translation>
-<translation id="6944967875980567883">Chromium ላይ የተጫኑ ሞዱሎች</translation>
-<translation id="118298050220780080">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ በኮምፒውተርዎ ስርዓተ ክወና የማይታመን አካል የተሰጠ የእውቅና ማረጋገጫ ነው ያሳየው። ይሄ ማለት አገልጋዩ የራሱ የደህንነት ምስክርነቶች አመንጭቷል ማለት ነው፣ Chromium ደግሞ ለማንነት መረጃን ለማወቅ ሊተማመንበት አይችልም ወይም አንድ አጥቂ ግንኙነቶችዎን ለመጥለፍ እየሞከረ ሊሆን ይችላል።</translation>
-<translation id="3296368748942286671">Chromium ሲዘጋ የጀርባ መተግበሪያዎች ማሂዱን ይቀጥሉ</translation>
+<translation id="3421246989510066651">አንድ አስተዳዳሪ በዚህ ስርዓት ላይ BitPopን ጭኗል፣ እና ለሁሉም ተጠቃሚዎች ይገኛል። የስርዓት-ደረጃ BitPop የተጠቃሚ-ደረጃ ጭነትዎን አሁን ይተካዋል።</translation>
+<translation id="1563133725769368154">እባክዎ ሁሉንም የBitPop መስኮቶችን ይዝጉና እንደገና ይሞክሩ።</translation>
+<translation id="6948146312619379712">ይህ ለውጥ እንዲተገበር እባክዎ የBitPop መስኮቶችን ይዝጉና BitPopን ዳግም ያስጀምሩ።</translation>
+<translation id="5845248948746043578">BitPop ላይ የተጫኑ ሞዱሎች</translation>
+<translation id="4718546117684412327">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ በኮምፒውተርዎ ስርዓተ ክወና የማይታመን አካል የተሰጠ የእውቅና ማረጋገጫ ነው ያሳየው። ይሄ ማለት አገልጋዩ የራሱ የደህንነት ምስክርነቶች አመንጭቷል ማለት ነው፣ BitPop ደግሞ ለማንነት መረጃን ለማወቅ ሊተማመንበት አይችልም ወይም አንድ አጥቂ ግንኙነቶችዎን ለመጥለፍ እየሞከረ ሊሆን ይችላል።</translation>
+<translation id="2585492770508769131">BitPop ሲዘጋ የጀርባ መተግበሪያዎች ማሂዱን ይቀጥሉ</translation>
 <translation id="473775607612524610">አዘምን</translation>
-<translation id="6055895534982063517">አዲስ የChromium ስሪት ይገኛል፣ እና ከመቼውም በበለጠ ፈጣን ሆኗል።</translation>
-<translation id="2407806170074302369">ስለChromium ክፈፍ...</translation>
-<translation id="5405650547142096840">ከChromium አስወግድ</translation>
+<translation id="1141543168124987471">አዲስ የBitPop ስሪት ይገኛል፣ እና ከመቼውም በበለጠ ፈጣን ሆኗል።</translation>
+<translation id="6560811749587757293">ስለBitPop ክፈፍ...</translation>
+<translation id="5971960158340115871">ከBitPop አስወግድ</translation>
 <translation id="7747138024166251722">ጫኝው ጊዜያዊ ማውጫ መፍጠር አልቻለም። እባክዎ ነፃ የዲስክ ቦታ እና ሶፍትዌር የመጫን ፍቃድ እንዳለ ይፈትሹ።</translation>
-<translation id="3258596308407688501">Chromium የውሂብ አቃፊው ላይ ማንበብ እና መጻፍ አይችልም፦
+<translation id="6494656531179085521">BitPop የውሂብ አቃፊው ላይ ማንበብ እና መጻፍ አይችልም፦
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="4932687624772039103">Chromium <ph name="OS_NAME"/>ን አይደግፍም።</translation>
+<translation id="7911731442009818211">BitPop <ph name="OS_NAME"/>ን አይደግፍም።</translation>
 <translation id="8738921060445980047">የማይታወቅ ስሪት።</translation>
 <translation id="6970811910055250180">መሣሪያዎን በማዘመን ላይ...</translation>
 <translation id="2485422356828889247">አራግፍ</translation>
-<translation id="85843667276690461">Chromiumን መጠቀም ላይ እገዛ ያግኙ</translation>
-<translation id="263863604136125912">Chromiumን ጀምር</translation>
-<translation id="2881203820889150661">Chromium የአሁኑ የዴስክቶፕ ምህዳሩን ማወቅ ስላልቻለ የመተግበሪያ አቋራጭ መፍጠር አይችልም።</translation>
-<translation id="4886158514168859177">ይህ ኮምፒውተር አስቀድሞ ይበልጥ የቅርብ ጊዜ የChromium ክፍለ ገጸ ድር ስሪት አለው። ስፍትዌሩ የማይሰራ ከሆነ እባክዎ Chromium ክፍለ ገጸ ድርን ያራግፉና እንደገና ይሞክሩ።</translation>
+<translation id="8450502629618876351">BitPopን መጠቀም ላይ እገዛ ያግኙ</translation>
+<translation id="4742066939161073105">BitPopን ጀምር</translation>
+<translation id="736882515641604854">BitPop የአሁኑ የዴስክቶፕ ምህዳሩን ማወቅ ስላልቻለ የመተግበሪያ አቋራጭ መፍጠር አይችልም።</translation>
+<translation id="7209647769822542891">ይህ ኮምፒውተር አስቀድሞ ይበልጥ የቅርብ ጊዜ የBitPop ክፍለ ገጸ ድር ስሪት አለው። ስፍትዌሩ የማይሰራ ከሆነ እባክዎ BitPop ክፍለ ገጸ ድርን ያራግፉና እንደገና ይሞክሩ።</translation>
 <translation id="911206726377975832">የአሰሳ ውሂብዎም ይሰረዝ?</translation>
-<translation id="1699664235656412242">እባክዎ ሁሉንም የChromium መስኮቶችን (በWindows 8 ሁነታ ላይ ያሉትንም ጨምሮ) ይዝጉና እንደገና ይሞክሩ።</translation>
-<translation id="6734080038664603509">&amp;Chromiumን አዘምን</translation>
+<translation id="4501582071990606935">እባክዎ ሁሉንም የBitPop መስኮቶችን (በWindows 8 ሁነታ ላይ ያሉትንም ጨምሮ) ይዝጉና እንደገና ይሞክሩ።</translation>
+<translation id="2318017154298876822">&amp;BitPopን አዘምን</translation>
 <translation id="8862326446509486874">ለስርዓተ-ደረጃ ጭነት ተገቢ መብቶች የሉዎትም። ጫኚውን እንደ አስተዳዳሪ በማሄድ እንደገና ይሞክሩ።</translation>
-<translation id="1774152462503052664">Chromium ጀርባ ላይ ይሂድ</translation>
-<translation id="9022552996538154597">Chromium ውስጥ ይግቡ</translation>
+<translation id="8308846639737830860">BitPop ጀርባ ላይ ይሂድ</translation>
+<translation id="8251642411216619957">BitPop ውስጥ ይግቡ</translation>
 <translation id="4365115785552740256">Chromium በ<ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/>  ክፍት ምንጭ ፕሮጀክት እና በሌላ <ph name="BEGIN_LINK_OSS"/>ክፍት ምንጭ ሶፍትዌር<ph name="END_LINK_OSS"/> እውን ሊሆን ችሏል።</translation>
-<translation id="6248213926982192922">Chromium ነባሪውን አሳሽ ያድርጉ።</translation>
-<translation id="7337881442233988129">Chromium</translation>
-<translation id="3069161343438701711">Chromium ሰሪ</translation>
+<translation id="6321973207566602686">BitPop ነባሪውን አሳሽ ያድርጉ።</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="6572431599095627851">BitPop ሰሪ</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="6757767188268205357">አታርመኝ</translation>
-<translation id="7294284502435423183">እነዚህን ደረጃዎች በመከተል የአውታረ መረብ መገመትን ለማሰናከል ይሞክሩ፦
+<translation id="6312770669638222416">እነዚህን ደረጃዎች በመከተል የአውታረ መረብ መገመትን ለማሰናከል ይሞክሩ፦
         ወደ
         <ph name="BEGIN_BOLD"/>
-        የChromium ምናሌ &gt;
+        የBitPop ምናሌ &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
         <ph name="END_BOLD"/>
         ይሂዱና «<ph name="NO_PREFETCH_DESCRIPTION"/>»ን አይምረጡ።
         ይሄ ችግሩን ካልፈታው ለተሻሻለ አፈጻጸም ይህን አማራጭ እንደገና መምረጥ እንመክራለን።</translation>
-<translation id="275588974610408078">የብልሽት ሪፖርት በChromium ውስጥ አይገኝም።</translation>
-<translation id="5909170354645388250">በChromium ውስጥ አልተሰራበትም። ቦታ ያዥ የመርጃ ካርታዎችን በማመሳሰል ውስጥ ሊያቆያቸው ነው። አንድ ነጋሪ እሴት ይጠብቃል፦ $1።</translation>
-<translation id="3582788516608077514">Chromiumን በማዘመን ላይ...</translation>
-<translation id="7223968959479464213">ተግባር መሪ - Chromium</translation>
-<translation id="3838208658251026018">Chromium አሁን የሚከተሉትን ንጥሎች ከ<ph name="BROWSER_COMPONENT"/> እያስመጣ ነው፦</translation>
-<translation id="6638567566961868659">ዕልባቶችዎን በChromium ምናሌ ውስጥ ወይም በዕልባቶች አሞሌው ላይ ይፈልጉ።</translation>
-<translation id="2673087257647337101">የተዘመነ ለመሆን ጥቂት ብቻ ቀርቷል! ዝማኔውን ለማጠናቀቅ Chromiumን ዳግም ያስጀምሩት።</translation>
-<translation id="5398878173008909840">አዲስ የChromium ስሪት አለ።</translation>
-<translation id="2648074677641340862">በጭነት ጊዜ የስርዓተ ክወና ስህተት ተፈጥሯል። እባክዎ Chromiumን እንደገና ያውርዱት።</translation>
-<translation id="5942520288919337908"><ph name="EXTENSION_NAME"/> ወደ Chromium ታክሏል።</translation>
-<translation id="8678787945719392857">ሁሉም የChromium ነገሮችዎን ለማመሳሰል ይሄን የGoogle መለያ ይጠቀሙበት?</translation>
-<translation id="8621669128220841554">ተለይቶ ባልታወቀ ስህተት ምክንያት ጭነት ከሽፏል። እባክዎ Chromiumን እንደገና ያውርዱ።</translation>
-<translation id="6717134281241384636">መገለጫዎ ከአዲስ የChromium ስሪት ስለሆነ የመጣው ስራ ላይ ሊውል አይችልም።
+<translation id="6220055452245182274">የብልሽት ሪፖርት በBitPop ውስጥ አይገኝም።</translation>
+<translation id="924450301557116466">በBitPop ውስጥ አልተሰራበትም። ቦታ ያዥ የመርጃ ካርታዎችን በማመሳሰል ውስጥ ሊያቆያቸው ነው። አንድ ነጋሪ እሴት ይጠብቃል፦ $1።</translation>
+<translation id="1984238998837921833">BitPopን በማዘመን ላይ...</translation>
+<translation id="9102885271730191378">ተግባር መሪ - BitPop</translation>
+<translation id="3916917357864849352">BitPop አሁን የሚከተሉትን ንጥሎች ከ<ph name="BROWSER_COMPONENT"/> እያስመጣ ነው፦</translation>
+<translation id="5243897687251941678">ዕልባቶችዎን በBitPop ምናሌ ውስጥ ወይም በዕልባቶች አሞሌው ላይ ይፈልጉ።</translation>
+<translation id="5925519479755588070">የተዘመነ ለመሆን ጥቂት ብቻ ቀርቷል! ዝማኔውን ለማጠናቀቅ BitPopን ዳግም ያስጀምሩት።</translation>
+<translation id="4352003675682958984">አዲስ የBitPop ስሪት አለ።</translation>
+<translation id="8972540218839637401">በጭነት ጊዜ የስርዓተ ክወና ስህተት ተፈጥሯል። እባክዎ BitPopን እንደገና ያውርዱት።</translation>
+<translation id="8935838934328341225"><ph name="EXTENSION_NAME"/> ወደ BitPop ታክሏል።</translation>
+<translation id="8871841738132225233">ሁሉም የBitPop ነገሮችዎን ለማመሳሰል ይሄን የGoogle መለያ ይጠቀሙበት?</translation>
+<translation id="8988481325911971852">ተለይቶ ባልታወቀ ስህተት ምክንያት ጭነት ከሽፏል። እባክዎ BitPopን እንደገና ያውርዱ።</translation>
+<translation id="660036136456272595">መገለጫዎ ከአዲስ የBitPop ስሪት ስለሆነ የመጣው ስራ ላይ ሊውል አይችልም።
 
-አንዳንድ ባህሪያት ላይገኙ ይችላሉ። እባክዎ የተለየ የመገለጫ አቃፊ ይግለጹ ወይም ይበልጥ አዲስ የሆነ የChromium ስሪት ይጠቀሙ።</translation>
+አንዳንድ ባህሪያት ላይገኙ ይችላሉ። እባክዎ የተለየ የመገለጫ አቃፊ ይግለጹ ወይም ይበልጥ አዲስ የሆነ የBitPop ስሪት ይጠቀሙ።</translation>
 <translation id="2712549016134575851">ከሌላ የተጫነ መተግበሪያ ጋር አለመግባባት ተፈጥሯል።</translation>
-<translation id="4881709374218686648">ከዚህ ቀደም በተለየ መለያ ገብተው ነበር፣ መግባት ሁሉንም ውሂብዎን ያዋህደዋል። ለChromium ነገሮችዎ አዲስ የChromium ተጠቃሚ በ<ph name="BEGIN_LINK"/>ቅንብሮች ገጽ<ph name="END_LINK"/> በኩል መፍጠሩን ያስቡበት።</translation>
-<translation id="9013087743919948559">ወደ Chromium ያክሉ</translation>
-<translation id="6212496753309875659">ይህ ኮምፒውተር አስቀድሞ ይበልጥ አዲስ የሆነ የChromium ስሪት አለው። ሶፍትዌሩ የማይሰራ ከሆነ እባክዎ Chromiumን ያራግፉና እንደገና ይሞክሩ።</translation>
-<translation id="3014684866565908571">Chromium መገልገያ</translation>
+<translation id="1095023322915848441">ከዚህ ቀደም በተለየ መለያ ገብተው ነበር፣ መግባት ሁሉንም ውሂብዎን ያዋህደዋል። ለBitPop ነገሮችዎ አዲስ የBitPop ተጠቃሚ በ<ph name="BEGIN_LINK"/>ቅንብሮች ገጽ<ph name="END_LINK"/> በኩል መፍጠሩን ያስቡበት።</translation>
+<translation id="7862155441175671173">ወደ BitPop ያክሉ</translation>
+<translation id="5594704848342987755">ይህ ኮምፒውተር አስቀድሞ ይበልጥ አዲስ የሆነ የBitPop ስሪት አለው። ሶፍትዌሩ የማይሰራ ከሆነ እባክዎ BitPopን ያራግፉና እንደገና ይሞክሩ።</translation>
+<translation id="3422131153907641068">BitPop መገልገያ</translation>
 <translation id="1298199220304005244">Chromium OS መጠቀም ላይ እገዛ ያግኙ</translation>
-<translation id="1691304614444223855">Chromium ክፍለ ገጸ ድር ተዘምኗል። እባክዎ አሳሽዎን ዳግም ያስጀምሩ። Chromium ስሪት፦ <ph name="TODO_0001"/>፣ Chromium ክፍለ ገጸ ድር ስሪት፦ <ph name="TODO_0002"/></translation>
+<translation id="8854394556488040390">BitPop ክፍለ ገጸ ድር ተዘምኗል። እባክዎ አሳሽዎን ዳግም ያስጀምሩ። BitPop ስሪት፦ <ph name="TODO_0001"/>፣ Chromium ክፍለ ገጸ ድር ስሪት፦ <ph name="TODO_0002"/></translation>
 <translation id="130631256467250065">ለውጦችዎ መሣሪያዎን ዳግም በሚያስጀምሩበት ቀጣዩ ጊዜ ላይ ይተገበራሉ።</translation>
-<translation id="1105130903706696483">Google Chrome በትክክል አልተዘጋም። ከፍተዋቸው የነበሩትን ገፆች ዳግም ለመክፈት እነበረበት መልስ የሚለውን ጠቅ ያድርጉ።</translation>
-<translation id="1929939181775079593">Chromium መልስ አይሰጥም። አሁን ዳግም ይጀምር?</translation>
+<translation id="2901348058800597589">Google Chrome በትክክል አልተዘጋም። ከፍተዋቸው የነበሩትን ገፆች ዳግም ለመክፈት እነበረበት መልስ የሚለውን ጠቅ ያድርጉ።</translation>
+<translation id="5653921603290474550">BitPop መልስ አይሰጥም። አሁን ዳግም ይጀምር?</translation>
 <translation id="6089587093203430357">ፈጣን</translation>
-<translation id="2966088006374919794">Chromium የ<ph name="SCHEME"/> አገናኞችን ለማስተናገድ አንድ ውጫዊ መተግበሪያ ማስጀመር አለበት። የተጠየቀው አገናኝ <ph name="PROTOLINK"/> ነው።</translation>
+<translation id="2410206016513008786">BitPop የ<ph name="SCHEME"/> አገናኞችን ለማስተናገድ አንድ ውጫዊ መተግበሪያ ማስጀመር አለበት። የተጠየቀው አገናኝ <ph name="PROTOLINK"/> ነው።</translation>
 <translation id="8046283042877435986">ይህ ጣቢያ Chromium ክፈፍን (አስቀድሞ የተጫነ) ይመክራል።</translation>
-<translation id="6287463253129672858">አሁን እያሄደ ያለ ተመሳሳዩን የChromium ክፍለ ገጸ ድር ስሪት መጫን አይቻልም። እባክዎ Chromium ክፍለ ገጸ ድርን ይዝጉ እና እንደገና ይሞክሩ።</translation>
-<translation id="2558235863893655150">Chromium የይለፍ ቃልዎን እንዲያስቀምጥልዎት ይፈልጋሉ?</translation>
-<translation id="3398522627033804247">ወደ
+<translation id="5523374683005655880">አሁን እያሄደ ያለ ተመሳሳዩን የBitPop ክፍለ ገጸ ድር ስሪት መጫን አይቻልም። እባክዎ BitPop ክፍለ ገጸ ድርን ይዝጉ እና እንደገና ይሞክሩ።</translation>
+<translation id="5574763173398621221">BitPop የይለፍ ቃልዎን እንዲያስቀምጥልዎት ይፈልጋሉ?</translation>
+<translation id="7730150800475367955">ወደ
           <ph name="BEGIN_BOLD"/>
-          የChromium ምናሌ &gt;
+          የBitPop ምናሌ &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="INTERNET_TITLE"/>
@@ -165,16 +164,15 @@
           <ph name="NETWORK_TAB"/>
           <ph name="END_BOLD"/>
           ትር ውስጥ) ካለ ያንኑ ጠቅ ያድርጉና ውቅርዎ ወደ «ቀጥታ» መዋቀሩን ያረጋግጡ።</translation>
-<translation id="1231416733874080281">የChromium ምናሌን አሳይ</translation>
-<translation id="1688750314291223739">ግላዊነት የተላበሰው የአሳሽ ባህሪዎችዎ ድር ላይ ለማስቀመጥና ከዚያ Chromium ካለው ማንኛውም ኮምፒውተር ለመድረስ አመሳስልን ያዋቅሩ።</translation>
+<translation id="5387335700352644169">የBitPop ምናሌን አሳይ</translation>
 <translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
 <translation id="8865765905101981392">የበይነመረብ አሳሽ</translation>
 <translation id="6424492062988593837">Chromium አሁን ተሻሽሏል! አዲስ ስሪት አለ።</translation>
-<translation id="2910007522516064972">ስለ &amp;Chromium</translation>
-<translation id="8453117565092476964">የጫኚው መዝገብ ተበላሽቷል ወይም ትክክል አይደለም። እባክዎ Chromiumን እንደገና ያውርዱ።</translation>
-<translation id="2162026298602630383">ወደ
+<translation id="6385431739515246076">ስለ &amp;BitPop</translation>
+<translation id="7521125380721653484">የጫኚው መዝገብ ተበላሽቷል ወይም ትክክል አይደለም። እባክዎ BitPopን እንደገና ያውርዱ።</translation>
+<translation id="6836892784612884953">ወደ
           <ph name="BEGIN_BOLD"/>
-          የChromium ምናሌ &gt;
+          የBitPop ምናሌ &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -182,38 +180,37 @@
           <ph name="PROXIES_TITLE"/>
           <ph name="END_BOLD"/>
           ይሂዱና ውቅርዎ ወደ «ምንም ተኪ» ወይም «ቀጥታ» መዋቀሩን ያረጋግጡ።</translation>
-<translation id="3249425904492147663">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ ጊዜው ያለፈበት የእውቅና ማረጋገጫ ነው ያቀረበው። ጊዜው ካለፈበት ጀምሮ ያ የእውቅና ማረጋገጫ ጥቃት ደርሶበት እንደሆነ ምንም የሚያሳይ መረጃ አይገኝም። ይህ ማለት Chromium ከአጥቂ ይልቅ ከ&lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ጋር እየተገናኙ መሆንዎን ሊያረጋግጥ አይችልም። የኮምፒውርዎ ሰዓት በአሁኑ ጊዜ <ph name="CURRENT_TIME"/> እንዲል ተዋቅሯል። ትክክል ይመስላል? ካልሆነ ስህተቱን አርመው ይህን ገጽ ማደስ አለብዎት።</translation>
+<translation id="457806999714267838">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ ጊዜው ያለፈበት የእውቅና ማረጋገጫ ነው ያቀረበው። ጊዜው ካለፈበት ጀምሮ ያ የእውቅና ማረጋገጫ ጥቃት ደርሶበት እንደሆነ ምንም የሚያሳይ መረጃ አይገኝም። ይህ ማለት BitPop ከአጥቂ ይልቅ ከ&lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ጋር እየተገናኙ መሆንዎን ሊያረጋግጥ አይችልም። የኮምፒውርዎ ሰዓት በአሁኑ ጊዜ <ph name="CURRENT_TIME"/> እንዲል ተዋቅሯል። ትክክል ይመስላል? ካልሆነ ስህተቱን አርመው ይህን ገጽ ማደስ አለብዎት።</translation>
 <translation id="7196020411877309443">ለምን ይህን አያለሁ?</translation>
-<translation id="7483335560992089831">እየሄደ ያለውን ተመሳሳዩን የChromium ስሪት መጫን አይቻልም። እባክዎ Chromiumን ይዝጉና እንደገና ይሞክሩ።</translation>
-<translation id="7641113255207688324">Chromium ነባሪ አሳሽዎ አይደለም።</translation>
-<translation id="6208388956150196549">የChromium መተግበሪያዎች አስጀማሪ</translation>
+<translation id="473359818469623008">እየሄደ ያለውን ተመሳሳዩን የBitPop ስሪት መጫን አይቻልም። እባክዎ BitPopን ይዝጉና እንደገና ይሞክሩ።</translation>
+<translation id="2595850371931815386">BitPop ነባሪ አሳሽዎ አይደለም።</translation>
+<translation id="1857156280997837230">የBitPop መተግበሪያዎች አስጀማሪ</translation>
 <translation id="4458285410772214805">ይሄ ለውጥ እንዲተገበር እባክዎ ይውጡ እና እንደገና ይግቡ።</translation>
-<translation id="9109696651501887488">በWindows የተግባር አሞሌ ላይ ወደ የChromium መተግበሪያዎች አስጀማሪ የሚወስደውን አቋራጭ አሳይ።</translation>
+<translation id="6523007289492675308">በWindows የተግባር አሞሌ ላይ ወደ የBitPop መተግበሪያዎች አስጀማሪ የሚወስደውን አቋራጭ አሳይ።</translation>
 <translation id="2119636228670142020">&amp;ስለChromium OS</translation>
-<translation id="1708666629004767631">አዲስና ደህንነቱ ይበልጥ የተጠበቀ የChromium ስሪት አለ።</translation>
-<translation id="1539981464052805551">የቅጂ መብት 2012 የChromium ደራሲያን። ሁሉም መብቶች የተጠበቁ ናቸው።</translation>
-<translation id="6606161915035466984">የChromium መተግበሪያዎች አስጀማሪውን አሳይ።</translation>
-<translation id="8616882682724010661">Chromium ውስጥ የመግባት <ph name="BEGIN_LINK"/>ተጨማሪ ጥቅሞች<ph name="END_LINK"/>ን ይመልከቱ።</translation>
-<translation id="378917192836375108">Chromium ድር ላይ ያለ ስልክ ቁጥር ጠቅ እንዲያደርጉትና በSkype እንዲደውሉበት ያስችልዎታል!</translation>
-<translation id="8724049448828509830">አንድ ውርድ አሁን በሂደት ላይ ነው። ከChromium ወጥተው ውርዱን መሰረዝ ይፈልጋሉ?</translation>
-<translation id="3360567213983886831">Chromium ሁለትዮሾች</translation>
-<translation id="7503101070699687603">የChromium ተሰኪ አስተናጋጅ</translation>
-<translation id="2739631515503418643">ውርዶች በአሁኑ ጊዜ በሂደት ላይ ናቸው። ከChromium መውጣትና ውርዶቹን መሰረዝ ይፈልጋሉ?</translation>
-<translation id="9013262824292842194">Chromium Windows Vista ወይም Windows XP ከSP2 ወይም ከዚያ በላይ ይፈልጋል።</translation>
-<translation id="1967743265616885482">ተመሳሳይ ስም ያለው ሞዱል ከChromium ጋር የሚጋጭ መሆኑ ይታወቃል።</translation>
-<translation id="4224199872375172890">Chromium የተዘመነ ነው።</translation>
-<translation id="374481098568514319">ይህ ኮምፒውተር አስቀድሞ ይበልጥ ቅርብ የሆነ የChromium ምንዝሮች ስሪት አለው። እባክዎ ይበልጥ ቅርብ የሆነ ጫኚ ይጠቀሙ።</translation>
-<translation id="6240281849816458190">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ ገና የሚሰራ ያልሆነ እውቅና ማረጋገጫ ነው ያሳየው። ያ እውቅና ማረጋገጫ ሊታመን የሚችል መሆኑን ወይም አለመሆኑን የሚያሳይ ምንም መረጃ የለም። Chromium ከአጥቂ ሳይሆን ከ&lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ጋር እየተገናኙ መሆንዎን በአስተማማኝ ሁኔታ ማረጋገጥ አይችልም። የኮምፒውተርዎ ሰዓት በአሁኑ ጊዜ <ph name="CURRENT_TIME"/> ላይ ተዋቅሯል። ይሄ ልክ ይመስላል? ካልሆነ የስርዓትዎን ሰዓት አስተካክለው ከዚያ ይህን ገጽ ማደስ አለብዎት።</translation>
-<translation id="5498103559159810756">Chromium በአሁኑ ጊዜ <ph name="PAGE_TITLE"/> እንዲሆን የተዋቀረውን ነባሪ የመፈለጊያ ፕሮግራምዎን እየተጠቀመ ነው። ነባሪው የፍለጋ ፕሮግራምዎ እንዳለ ማስቀመጥ ይፈልጋሉ?</translation>
-<translation id="5862307444128926510">ወደ Chromium እንኳን በደህና መጡ</translation>
-<translation id="1622565934590470080">ይህ ኮምፒውተር አስቀድሞ ይበልጥ የቅርብ ጊዜ የChromium እና Chromium ክፍለ ገጸ ድር ስሪት አለው። ስፍትዌሩ የማይሰራ ከሆነ እባክዎ ሁለቱንም Chromium እና Chromium ክፍለ ገጸ ድርን ያራግፉና እንደገና ይሞክሩ።</translation>
-<translation id="7318036098707714271">የምርጫዎች ፋይልዎ የተበላሸ ወይም ልክ ያልሆነ ነው።
+<translation id="4196382931981526364">አዲስና ደህንነቱ ይበልጥ የተጠበቀ የBitPop ስሪት አለ።</translation>
+<translation id="1077424736315176936">የBitPop መተግበሪያዎች አስጀማሪውን አሳይ።</translation>
+<translation id="5330935702921516708">BitPop ውስጥ የመግባት <ph name="BEGIN_LINK"/>ተጨማሪ ጥቅሞች<ph name="END_LINK"/>ን ይመልከቱ።</translation>
+<translation id="862266784641000464">BitPop ድር ላይ ያለ ስልክ ቁጥር ጠቅ እንዲያደርጉትና በSkype እንዲደውሉበት ያስችልዎታል!</translation>
+<translation id="8072591166076742072">አንድ ውርድ አሁን በሂደት ላይ ነው። ከBitPop ወጥተው ውርዱን መሰረዝ ይፈልጋሉ?</translation>
+<translation id="932207424499184915">BitPop ሁለትዮሾች</translation>
+<translation id="3223104112377435850">የBitPop ተሰኪ አስተናጋጅ</translation>
+<translation id="7826309952950470209">ውርዶች በአሁኑ ጊዜ በሂደት ላይ ናቸው። ከBitPop መውጣትና ውርዶቹን መሰረዝ ይፈልጋሉ?</translation>
+<translation id="380873736468525691">BitPop Windows Vista ወይም Windows XP ከSP2 ወይም ከዚያ በላይ ይፈልጋል።</translation>
+<translation id="2762974284703971745">ተመሳሳይ ስም ያለው ሞዱል ከBitPop ጋር የሚጋጭ መሆኑ ይታወቃል።</translation>
+<translation id="5443433498537176573">BitPop የተዘመነ ነው።</translation>
+<translation id="5637727561937246825">ይህ ኮምፒውተር አስቀድሞ ይበልጥ ቅርብ የሆነ የBitPop ምንዝሮች ስሪት አለው። እባክዎ ይበልጥ ቅርብ የሆነ ጫኚ ይጠቀሙ።</translation>
+<translation id="5082591353921977637">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;ን ለመድረስ ሞክረዋል፣ ግን አገልጋዩ ገና የሚሰራ ያልሆነ እውቅና ማረጋገጫ ነው ያሳየው። ያ እውቅና ማረጋገጫ ሊታመን የሚችል መሆኑን ወይም አለመሆኑን የሚያሳይ ምንም መረጃ የለም። BitPop ከአጥቂ ሳይሆን ከ&lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ጋር እየተገናኙ መሆንዎን በአስተማማኝ ሁኔታ ማረጋገጥ አይችልም። የኮምፒውተርዎ ሰዓት በአሁኑ ጊዜ <ph name="CURRENT_TIME"/> ላይ ተዋቅሯል። ይሄ ልክ ይመስላል? ካልሆነ የስርዓትዎን ሰዓት አስተካክለው ከዚያ ይህን ገጽ ማደስ አለብዎት።</translation>
+<translation id="1138135211676039883">BitPop በአሁኑ ጊዜ <ph name="PAGE_TITLE"/> እንዲሆን የተዋቀረውን ነባሪ የመፈለጊያ ፕሮግራምዎን እየተጠቀመ ነው። ነባሪው የፍለጋ ፕሮግራምዎ እንዳለ ማስቀመጥ ይፈልጋሉ?</translation>
+<translation id="185658551912723674">ወደ BitPop እንኳን በደህና መጡ</translation>
+<translation id="6808688532552992663">ይህ ኮምፒውተር አስቀድሞ ይበልጥ የቅርብ ጊዜ የBitPop እና BitPop ክፍለ ገጸ ድር ስሪት አለው። ስፍትዌሩ የማይሰራ ከሆነ እባክዎ ሁለቱንም BitPop እና BitPop ክፍለ ገጸ ድርን ያራግፉና እንደገና ይሞክሩ።</translation>
+<translation id="1909867102505992367">የምርጫዎች ፋይልዎ የተበላሸ ወይም ልክ ያልሆነ ነው።
 
-Chromium ቅንብሮችዎን ማስመለስ አልቻለም።</translation>
-<translation id="6403826409255603130">Chromium ድረ-ገጾችን እና መተግበሪያዎችን እጅግ በጣም ፈጣን በሆነ ፍጥነት የሚያሄድ ድር አሳሽ ነው። ፈጣን፣ የረጋ እና ለመጠቀም ቀላል ነው። Chromium ውስጥ አብሮ በተሰራላቸው የተንኮል-አዘል ሶፍትዌር እና የማስገሪያ መከላከያዎች አማካኝነት ደህንነትዎ ይበልጥ በተጠበቀ ሁኔታ ድሩን ያስሱ።</translation>
-<translation id="2927042866129133279">ልክ ያልሆኑ ነጋሪ እሴቶች። Chromium ሳይጫን Chromium ክፈፍን በዝግጁ ሁነታ መጫን አይቻልም።</translation>
-<translation id="2572494885440352020">Chromium አጋዥ</translation>
-<translation id="442817494342774222">ኮምፒውተርዎ ሲጀምር Chromium በራስ-ሰር እንዲጀምር ተዋቅሯል።</translation>
+BitPop ቅንብሮችዎን ማስመለስ አልቻለም።</translation>
+<translation id="4933902704814222889">BitPop ድረ-ገጾችን እና መተግበሪያዎችን እጅግ በጣም ፈጣን በሆነ ፍጥነት የሚያሄድ ድር አሳሽ ነው። ፈጣን፣ የረጋ እና ለመጠቀም ቀላል ነው። BitPop ውስጥ አብሮ በተሰራላቸው የተንኮል-አዘል ሶፍትዌር እና የማስገሪያ መከላከያዎች አማካኝነት ደህንነትዎ ይበልጥ በተጠበቀ ሁኔታ ድሩን ያስሱ።</translation>
+<translation id="7673336527696184948">ልክ ያልሆኑ ነጋሪ እሴቶች። BitPop ሳይጫን BitPop ክፈፍን በዝግጁ ሁነታ መጫን አይቻልም።</translation>
+<translation id="5583217122091744450">BitPop አጋዥ</translation>
+<translation id="6404599307042403560">ኮምፒውተርዎ ሲጀምር BitPop በራስ-ሰር እንዲጀምር ተዋቅሯል።</translation>
 <translation id="8974095189086268230">Chromium OS በተጨማሪ <ph name="BEGIN_LINK_CROS_OSS"/>ክፍት ምንጭ ሶፍትዌር<ph name="END_LINK_CROS_OSS"/> እውን ሊሆን ችሏል።</translation>
 <translation id="1221340462641866827">Chromium OS የ<ph name="SCHEME"/> አገናኞችን ለማስተናገድ የውጫዊ መተግበሪያዎችን ማስጀመር አይደግፍም። የተጠየቀው አገናኝ <ph name="PROTOLINK"/> ነው።</translation>
 </translationbundle>

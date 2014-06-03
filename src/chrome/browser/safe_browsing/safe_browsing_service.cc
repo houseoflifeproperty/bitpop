@@ -266,7 +266,7 @@ SafeBrowsingProtocolManager* SafeBrowsingService::protocol_manager() const {
 
 SafeBrowsingPingManager* SafeBrowsingService::ping_manager() const {
   return ping_manager_;
-}
+  }
 
 SafeBrowsingUIManager* SafeBrowsingService::CreateUIManager() {
   return new SafeBrowsingUIManager(this);
@@ -323,16 +323,16 @@ void SafeBrowsingService::StartOnIOThread() {
   // On Windows, get the safe browsing client name from the browser
   // distribution classes in installer util. These classes don't yet have
   // an analog on non-Windows builds so just keep the name specified here.
-#if defined(OS_WIN)
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  config.client_name = dist->GetSafeBrowsingName();
-#else
+//#if defined(OS_WIN)
+//  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+//  std::string client_name(dist->GetSafeBrowsingName());
+//#else
 #if defined(GOOGLE_CHROME_BUILD)
   config.client_name = "googlechrome";
 #else
   config.client_name = "chromium";
 #endif
-#endif
+//#endif
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
   config.disable_auto_update =
       cmdline->HasSwitch(switches::kSbDisableAutoUpdate) ||
@@ -369,14 +369,14 @@ void SafeBrowsingService::StopOnIOThread(bool shutdown) {
   ui_manager_->StopOnIOThread(shutdown);
 
   if (enabled_) {
-    enabled_ = false;
+  enabled_ = false;
 
 #if defined(FULL_SAFE_BROWSING)
     // This cancels all in-flight GetHash requests. Note that database_manager_
     // relies on the protocol_manager_ so if the latter is destroyed, the
     // former must be stopped.
-    delete protocol_manager_;
-    protocol_manager_ = NULL;
+  delete protocol_manager_;
+  protocol_manager_ = NULL;
 #endif
     delete ping_manager_;
     ping_manager_ = NULL;

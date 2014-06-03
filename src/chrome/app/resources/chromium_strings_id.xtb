@@ -1,53 +1,52 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="id">
 <translation id="6676384891291319759">Akses Internet</translation>
-<translation id="6373523479360886564">Anda yakin ingin mencopot pemasangan Chromium?</translation>
-<translation id="6510925080656968729">Copot Pemasangan Chromium</translation>
-<translation id="6893813176749746474">Chromium telah diperbarui, tetapi Anda belum menggunakannya selama setidaknya 30 hari.</translation>
-<translation id="1550579416447684632">Luncurkan aplikasi Chromium</translation>
-<translation id="4267347018362241535">Peluncur Aplikasi Chromium adalah platform yang berdiri sendiri untuk aplikasi Chromium.</translation>
+<translation id="8447784615389818621">Anda yakin ingin mencopot pemasangan BitPop?</translation>
+<translation id="100741878661450640">Copot Pemasangan BitPop</translation>
+<translation id="4301276314211054820">BitPop telah diperbarui, tetapi Anda belum menggunakannya selama setidaknya 30 hari.</translation>
+<translation id="8935261719622405725">Luncurkan aplikasi BitPop</translation>
+<translation id="2556535128417126306">Peluncur Aplikasi BitPop adalah platform yang berdiri sendiri untuk aplikasi BitPop.</translation>
 <translation id="2770231113462710648">Ubah browser default ke:</translation>
-<translation id="6613594504749178791">Perubahan Anda akan berlaku saat berikutnya Anda membuka Chromium.</translation>
-<translation id="3748537968684000502">Anda sedang melihat laman Chromium yang aman.</translation>
-<translation id="8971920611044657379">Chromium Frame</translation>
+<translation id="6870152852581894991">Perubahan Anda akan berlaku saat berikutnya Anda membuka BitPop.</translation>
+<translation id="3588014340702790340">Anda sedang melihat laman BitPop yang aman.</translation>
+<translation id="6789998774111513164">BitPop Frame</translation>
 <translation id="1065672644894730302">Preferensi Anda tidak dapat dibaca. Beberapa fitur mungkin tidak tersedia dan perubahan pada preferensi tidak akan disimpan.</translation>
-<translation id="4222661289444749267">Pembaruan Chromium Frame.</translation>
-<translation id="2843244238218937196">Perender Chromium</translation>
-<translation id="7128196614940529818">Chromium Frame sudah terpasang dan tersedia untuk semua pengguna komputer ini. Jika Anda ingin memasang Chromium Frame pada tingkat pengguna, Anda harus mencopot pemasangan versi tingkat sistem yang tadinya dipasang oleh administrator.</translation>
+<translation id="4901429675189043920">Pembaruan BitPop Frame.</translation>
+<translation id="1132852132282742543">Perender BitPop</translation>
+<translation id="7155774694068736041">BitPop Frame sudah terpasang dan tersedia untuk semua pengguna komputer ini. Jika Anda ingin memasang BitPop Frame pada tingkat pengguna, Anda harus mencopot pemasangan versi tingkat sistem yang tadinya dipasang oleh administrator.</translation>
 <translation id="731644333568559921">Pembaruan &amp;Chromium OS</translation>
-<translation id="7421823331379285070">Chromium memerlukan Windows XP atau yang lebih baru. Sebagian fitur mungkin tidak berfungsi.</translation>
+<translation id="5284421695473942517">BitPop memerlukan Windows XP atau yang lebih baru. Sebagian fitur mungkin tidak berfungsi.</translation>
 <translation id="3549345495227188780">Memulai dengan Chromium OS</translation>
-<translation id="4330297532943865716">Ditemukan pemasangan Chromium atau Chromium Frame yang bentrok di sistem. Copot pemasangannya dan coba lagi.</translation>
-<translation id="6953661834318318668">Bilah Alat Chromium</translation>
-<translation id="7097100943370017396">Chromium tidak lagi diperbarui karena sistem operasi Anda sudah usang.</translation>
-<translation id="2245147136185581459">Detektor Chromium Captive Portal</translation>
-<translation id="4285930937574705105">Pemasangan gagal karena kesalahan yang tidak diketahui. Jika Chromium sedang berjalan, tutup, lalu ulang kembali.</translation>
-<translation id="2589479092236095792">Setelan IsiOtomatis Chromium</translation>
-<translation id="658492233547000995">Gunakan Peluncur Aplikasi Chromium untuk meluncurkan aplikasi Anda.</translation>
+<translation id="8363397932717822970">Ditemukan pemasangan BitPop atau BitPop Frame yang bentrok di sistem. Copot pemasangannya dan coba lagi.</translation>
+<translation id="8235603028098851915">Bilah Alat BitPop</translation>
+<translation id="5953515305183787825">BitPop tidak lagi diperbarui karena sistem operasi Anda sudah usang.</translation>
+<translation id="7230682351542979557">Detektor BitPop Captive Portal</translation>
+<translation id="325440606879482824">Pemasangan gagal karena kesalahan yang tidak diketahui. Jika BitPop sedang berjalan, tutup, lalu ulang kembali.</translation>
+<translation id="7224939653007212692">Setelan IsiOtomatis BitPop</translation>
+<translation id="3078552028547324322">Gunakan Peluncur Aplikasi BitPop untuk meluncurkan aplikasi Anda.</translation>
 <translation id="3555616473548901994">Pencopotan pemasangan selesai.</translation>
-<translation id="3674409928058572366">Hosting Aplikasi Chromium</translation>
-<translation id="2886012850691518054">Opsional: Bantu menjadikan Chrome lebih baik dengan mengirim statistik penggunaan dan laporan kerusakan secara otomatis ke Google.</translation>
-<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
-<translation id="1989424089625731201">Anda mencoba membuka &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun sertifikat yang ditunjukkan server berisi kesalahan. Chromium tidak dapat menggunakan sertifikat berisi kesalahan dan tidak dapat memvalidasi identitas situs yang coba Anda sambungkan.</translation>
-<translation id="3103660991484857065">Pemasang gagal membatalkan kompresi arsip. Unduh Chromium lagi.</translation>
-<translation id="872034308864968620">Jalankan Chromium di Latar Belakang</translation>
-<translation id="5109068449432240255">Ya, keluar dari Chromium</translation>
-<translation id="4320129595801648679">Laman Tab Baru Chromium telah direnovasi. Beralih antar bagian dengan mengeklik label ini. Chromium akan mengingat preferensi Anda untuk kesempatan berikutnya.</translation>
+<translation id="5814137742095860156">Hosting Aplikasi BitPop</translation>
+<translation id="9205983754412543288">Opsional: Bantu menjadikan Chrome lebih baik dengan mengirim statistik penggunaan dan laporan kerusakan secara otomatis ke Google.</translation>
+<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="6259082392093297310">Anda mencoba membuka &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun sertifikat yang ditunjukkan server berisi kesalahan. BitPop tidak dapat menggunakan sertifikat berisi kesalahan dan tidak dapat memvalidasi identitas situs yang coba Anda sambungkan.</translation>
+<translation id="3801183610358973379">Pemasang gagal membatalkan kompresi arsip. Unduh BitPop lagi.</translation>
+<translation id="4450789702440326676">Jalankan BitPop di Latar Belakang</translation>
+<translation id="2963590958538393837">Ya, keluar dari BitPop</translation>
+<translation id="8031724302809093115">Laman Tab Baru BitPop telah direnovasi. Beralih antar bagian dengan mengeklik label ini. Chromium akan mengingat preferensi Anda untuk kesempatan berikutnya.</translation>
 <translation id="1480489203462860648">Cobalah, ini sudah dipasang</translation>
-<translation id="3032787606318309379">Menambahkan Chromium...</translation>
-<translation id="4831257561365056138">Copot pemasangan Peluncur Aplikasi Chromium</translation>
-<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Peringatan:<ph name="END_BOLD"/> Chromium tidak dapat mencegah ekstensi merekam riwayat penjelajahan Anda. Untuk menonaktifkan ekstensi ini dalam mode penyamaran, jangan pilih opsi ini.</translation>
-<translation id="985602178874221306">Penulis Chromium</translation>
-<translation id="8628626585870903697">Chromium tidak menyertakan penampil PDF yang dibutuhkan agar Pratinjau Cetak berfungsi.</translation>
-<translation id="7138853919861947730">Chromium dapat menggunakan layanan web untuk meningkatkan pengalaman penjelajahan Anda.</translation>
-<translation id="466053073629175099">Sekarang Anda masuk ke Chromium! Bookmark, riwayat, dan setelan lainnya akan disinkronkan ke Akun Google Anda.</translation>
-<translation id="4179848566211676653">Keluar dari Chromium</translation>
-<translation id="3849925841547750267">Sayangnya, setelan Mozilla Firefox Anda tidak tersedia sewaktu browser berjalan. Untuk mengimpor setelan ke Chromium, simpan pekerjaan dan tutup semua jendela Firefox. Kemudian klik Lanjutkan.</translation>
-<translation id="7771626876550251690">Dalam hal ini, alamat yang tercantum di sertifikat tidak cocok dengan alamat situs web yang dicoba dibuka di browser Anda. Satu alasan yang mungkin untuk hal ini adalah bahwa komunikasi Anda dihentikan oleh penyerang yang memberikan sertifikat untuk situs web yang lain, sehingga dapat mengakibatkan ketidakcocokan. Kemungkinan alasan lainnya adalah server disiapkan untuk menampilkan sertifikat yang sama untuk beberapa situs web, termasuk salah satu yang coba Anda kunjungi, meskipun sertifikat tidak valid untuk semua situs web tersebut. Chromium dapat menyimpulkan dengan pasti bahwa Anda menjangkau &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, namun tidak dapat memverifikasi bahwa itu adalah situs yang sama seperti &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; yang ingin Anda buka. Jika Anda melanjutkan, Chromium tidak akan memeriksa setiap ketidakcocokan nama lebih lanjut.</translation>
-<translation id="2401271577450445716">Buka
+<translation id="7098153548331126805">Menambahkan BitPop...</translation>
+<translation id="5928487969163300899">Copot pemasangan Peluncur Aplikasi BitPop</translation>
+<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Peringatan:<ph name="END_BOLD"/> BitPop tidak dapat mencegah ekstensi merekam riwayat penjelajahan Anda. Untuk menonaktifkan ekstensi ini dalam mode penyamaran, jangan pilih opsi ini.</translation>
+<translation id="3941397373453695568">BitPop tidak menyertakan penampil PDF yang dibutuhkan agar Pratinjau Cetak berfungsi.</translation>
+<translation id="8155571637339134666">BitPop dapat menggunakan layanan web untuk meningkatkan pengalaman penjelajahan Anda.</translation>
+<translation id="5383732173730790693">Sekarang Anda masuk ke BitPop! Bookmark, riwayat, dan setelan lainnya akan disinkronkan ke Akun Google Anda.</translation>
+<translation id="6866316083935040427">Keluar dari BitPop</translation>
+<translation id="4759775690587852534">Sayangnya, setelan Mozilla Firefox Anda tidak tersedia sewaktu browser berjalan. Untuk mengimpor setelan ke BitPop, simpan pekerjaan dan tutup semua jendela Firefox. Kemudian klik Lanjutkan.</translation>
+<translation id="2411757162791070146">Dalam hal ini, alamat yang tercantum di sertifikat tidak cocok dengan alamat situs web yang dicoba dibuka di browser Anda. Satu alasan yang mungkin untuk hal ini adalah bahwa komunikasi Anda dihentikan oleh penyerang yang memberikan sertifikat untuk situs web yang lain, sehingga dapat mengakibatkan ketidakcocokan. Kemungkinan alasan lainnya adalah server disiapkan untuk menampilkan sertifikat yang sama untuk beberapa situs web, termasuk salah satu yang coba Anda kunjungi, meskipun sertifikat tidak valid untuk semua situs web tersebut. BitPop dapat menyimpulkan dengan pasti bahwa Anda menjangkau &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, namun tidak dapat memverifikasi bahwa itu adalah situs yang sama seperti &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; yang ingin Anda buka. Jika Anda melanjutkan, BitPop tidak akan memeriksa setiap ketidakcocokan nama lebih lanjut.</translation>
+<translation id="2423180989259159758">Buka
           <ph name="BEGIN_BOLD"/>
-          menu Chromium &gt;
+          menu BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -56,164 +55,162 @@
           &gt;
           Setelan LAN
           <ph name="END_BOLD"/>
-          lalu hapus pilihan pada kotak centang &quot;Gunakan server proxy untuk LAN&quot;.</translation>
-<translation id="4330585738697551178">Modul ini biasanya konflik dengan Chromium.</translation>
-<translation id="3190315855212034486">Aduh! Chromium ngadat. Luncurkan ulang sekarang?</translation>
-<translation id="6714487516757221107">Tidak ditemukan pemasangan Chromium atau Chromium Frame untuk diperbarui.</translation>
+          lalu hapus pilihan pada kotak centang "Gunakan server proxy untuk LAN".</translation>
+<translation id="2886079192271351730">Modul ini biasanya konflik dengan BitPop.</translation>
+<translation id="8324687802311409372">Aduh! BitPop ngadat. Luncurkan ulang sekarang?</translation>
+<translation id="606385048658239900">Tidak ditemukan pemasangan BitPop atau BitPop Frame untuk diperbarui.</translation>
 <translation id="3197823471738295152">Perangkat Anda sudah diperbarui.</translation>
 <translation id="8551886023433311834">Hampir selesai diperbarui! Nyalakan ulang perangkat untuk menyelesaikan pembaruan.</translation>
-<translation id="8353224596138547809">Ingin Chromium menyimpan sandi untuk situs ini?</translation>
+<translation id="9090519209458031409">Ingin BitPop menyimpan sandi untuk situs ini?</translation>
 <translation id="7339898014177206373">Jendela baru</translation>
 <translation id="3026202950002788510">Buka
           <ph name="BEGIN_BOLD"/>
           Aplikasi &gt; Preferensi Sistem &gt; Jaringan &gt; Lanjutan &gt; Proxy
           <ph name="END_BOLD"/>
           dan hapus centang semua proxy yang telah dipilih.</translation>
-<translation id="4124681358536363708">Direktori pemasangan Chromium kelihatannya sedang digunakan. Nyalakan ulang komputer dan coba lagi.</translation>
-<translation id="8770560772173120024">Chromium sedang mengimpor Favorit/Bookmark sekarang.</translation>
+<translation id="85540521058185027">Direktori pemasangan BitPop kelihatannya sedang digunakan. Nyalakan ulang komputer dan coba lagi.</translation>
+<translation id="5710380450759072582">BitPop sedang mengimpor Favorit/Bookmark sekarang.</translation>
 <translation id="225614027745146050">Selamat Datang</translation>
-<translation id="9191268552238695869">Administrator telah memasang Chromium pada sistem ini, dan tersedia untuk semua pengguna. Chromium tingkat sistem akan menggantikan pemasangan tingkat pengguna Anda sekarang.</translation>
-<translation id="3509308970982693815">Tutup semua jendela Chromium dan coba lagi.</translation>
-<translation id="4077262827416206768">Tutup semua jendela Chromium dan luncurkan ulang Chromium agar perubahan ini diterapkan.</translation>
-<translation id="6944967875980567883">Modul dimuat ke dalam Chromium</translation>
-<translation id="118298050220780080">Anda mencoba menjangkau &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun server menampilkan sertifikat yang diterbitkan oleh entitas yang tidak dipercayai sistem operasi komputer Anda. Artinya server telah membuat kredensial keamanannya sendiri, yang tidak dapat diandalkan oleh Chromium perihal informasi identitas, atau penyerang mungkin mencoba menghentikan komunikasi Anda.</translation>
-<translation id="3296368748942286671">Lanjutkan aplikasi yang berjalan di latar belakang jika Chromium ditutup</translation>
+<translation id="3421246989510066651">Administrator telah memasang BitPop pada sistem ini, dan tersedia untuk semua pengguna. BitPop tingkat sistem akan menggantikan pemasangan tingkat pengguna Anda sekarang.</translation>
+<translation id="1563133725769368154">Tutup semua jendela BitPop dan coba lagi.</translation>
+<translation id="6948146312619379712">Tutup semua jendela BitPop dan luncurkan ulang BitPop agar perubahan ini diterapkan.</translation>
+<translation id="5845248948746043578">Modul dimuat ke dalam BitPop</translation>
+<translation id="4718546117684412327">Anda mencoba menjangkau &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun server menampilkan sertifikat yang diterbitkan oleh entitas yang tidak dipercayai sistem operasi komputer Anda. Artinya server telah membuat kredensial keamanannya sendiri, yang tidak dapat diandalkan oleh BitPop perihal informasi identitas, atau penyerang mungkin mencoba menghentikan komunikasi Anda.</translation>
+<translation id="2585492770508769131">Lanjutkan aplikasi yang berjalan di latar belakang jika BitPop ditutup</translation>
 <translation id="473775607612524610">Mutakhirkan</translation>
-<translation id="6055895534982063517">Tersedia Chromium versi baru, dan versi ini lebih cepat dari sebelumnya.</translation>
-<translation id="2407806170074302369">Tentang Chromium Frame...</translation>
-<translation id="5405650547142096840">Hapus dari Chromium</translation>
+<translation id="1141543168124987471">Tersedia BitPop versi baru, dan versi ini lebih cepat dari sebelumnya.</translation>
+<translation id="6560811749587757293">Tentang BitPop Frame...</translation>
+<translation id="5971960158340115871">Hapus dari BitPop</translation>
 <translation id="7747138024166251722">Pemasang tidak dapat membuat direktori sementara. Periksa kapasitas kosong pada disk dan izin untuk memasang perangkat lunak.</translation>
-<translation id="3258596308407688501">Chromium tidak dapat membaca dan menulis ke direktori datanya:
+<translation id="6494656531179085521">BitPop tidak dapat membaca dan menulis ke direktori datanya:
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="4932687624772039103">Chromium tidak mendukung <ph name="OS_NAME"/>.</translation>
+<translation id="7911731442009818211">BitPop tidak mendukung <ph name="OS_NAME"/>.</translation>
 <translation id="8738921060445980047">Versi tidak diketahui.</translation>
 <translation id="6970811910055250180">Memperbarui perangkat Anda...</translation>
 <translation id="2485422356828889247">Copot instalasi</translation>
-<translation id="85843667276690461">Dapatkan bantuan tentang penggunaan Chromium</translation>
-<translation id="263863604136125912">Mulai Chromium</translation>
-<translation id="2881203820889150661">Chromium tidak dapat membuat pintasan aplikasi karena tidak dapat menentukan lingkungan desktop saat ini.</translation>
-<translation id="4886158514168859177">Komputer ini sudah memiliki Chromium Frame versi yang lebih anyar. Jika perangkat lunak tidak bekerja, copot Chromium Frame dan coba lagi.</translation>
+<translation id="8450502629618876351">Dapatkan bantuan tentang penggunaan BitPop</translation>
+<translation id="4742066939161073105">Mulai BitPop</translation>
+<translation id="736882515641604854">BitPop tidak dapat membuat pintasan aplikasi karena tidak dapat menentukan lingkungan desktop saat ini.</translation>
+<translation id="7209647769822542891">Komputer ini sudah memiliki BitPop Frame versi yang lebih anyar. Jika perangkat lunak tidak bekerja, copot BitPop Frame dan coba lagi.</translation>
 <translation id="911206726377975832">Hapus juga data rambanan Anda?</translation>
-<translation id="1699664235656412242">Tutup semua jendela Chromium (termasuk semua jendela dalam mode Windows 8) dan coba lagi.</translation>
-<translation id="6734080038664603509">Pembaruan &amp;Chromium</translation>
+<translation id="4501582071990606935">Tutup semua jendela BitPop (termasuk semua jendela dalam mode Windows 8) dan coba lagi.</translation>
+<translation id="2318017154298876822">Pembaruan &amp;BitPop</translation>
 <translation id="8862326446509486874">Anda tidak memiliki hak yang diperlukan untuk pemasangan tingkat sistem. Coba jalankan lagi pemasang saat masuk sebagai Administrator.</translation>
-<translation id="1774152462503052664">Jalankan Chromium di latar belakang</translation>
-<translation id="9022552996538154597">Masuk ke Chromium</translation>
+<translation id="8308846639737830860">Jalankan BitPop di latar belakang</translation>
+<translation id="8251642411216619957">Masuk ke BitPop</translation>
 <translation id="4365115785552740256">Chromium tercipta berkat proyek sumber terbuka <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> dan berbagai <ph name="BEGIN_LINK_OSS"/>perangkat lunak sumber terbuka<ph name="END_LINK_OSS"/> lainnya.</translation>
-<translation id="6248213926982192922">Jadikan Chromium browser default</translation>
-<translation id="7337881442233988129">Chromium</translation>
-<translation id="3069161343438701711">Pekerja Chromium</translation>
+<translation id="6321973207566602686">Jadikan BitPop browser default</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="6572431599095627851">Pekerja BitPop</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="6757767188268205357">Jangan ganggu saya</translation>
-<translation id="7294284502435423183">Coba nonaktifkan prediksi jaringan dengan mengikuti langkah berikut:
+<translation id="6312770669638222416">Coba nonaktifkan prediksi jaringan dengan mengikuti langkah berikut:
         Buka
         <ph name="BEGIN_BOLD"/>
-        menu Chromium &gt;
+        menu BitPop &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
         <ph name="END_BOLD"/>
-        dan batalkan pilihan &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>.&quot;
+        dan batalkan pilihan "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         Jika hal ini tidak menyelesaikan masalah, sebaiknya pilih opsi ini
         lagi untuk kinerja yang ditingkatkan.</translation>
-<translation id="275588974610408078">Pelaporan kerusakan tidak tersedia di Chromium.</translation>
-<translation id="5909170354645388250">Tidak digunakan dalam Chromium. Placeholder digunakan untuk menjaga peta sumber daya tetap sinkron. Menunggu satu argumen: $1.</translation>
-<translation id="3582788516608077514">Memperbarui Chromium...</translation>
-<translation id="7223968959479464213">Pengelola Tugas - Chromium</translation>
-<translation id="3838208658251026018">Saat ini, Chromium mengimpor item berikut dari <ph name="BROWSER_COMPONENT"/>:</translation>
-<translation id="6638567566961868659">Cari bookmark Anda dalam menu Chromium atau di bilah bookmark.</translation>
-<translation id="2673087257647337101">Hampir diperbarui! Luncurkan ulang Chromium untuk menyelesaikan pembaruan.</translation>
-<translation id="5398878173008909840">Tersedia Chromium versi baru.</translation>
-<translation id="2648074677641340862">Terjadi kesalahan pada sistem operasi saat pemasangan berlangsung. Unduh Chromium lagi.</translation>
-<translation id="5942520288919337908"><ph name="EXTENSION_NAME"/> telah ditambahkan ke Chromium.</translation>
-<translation id="8678787945719392857">Gunakan Akun Google ini untuk menyinkronkan semua barang Chromium Anda?</translation>
-<translation id="8621669128220841554">Pemasangan gagal karena kesalahan yang tidak ditentukan. Unduh Chromium lagi.</translation>
-<translation id="6717134281241384636">Profil Anda tidak dapat digunakan karena berasal dari Chromium versi yang lebih baru.
+<translation id="6220055452245182274">Pelaporan kerusakan tidak tersedia di BitPop.</translation>
+<translation id="924450301557116466">Tidak digunakan dalam BitPop. Placeholder digunakan untuk menjaga peta sumber daya tetap sinkron. Menunggu satu argumen: $1.</translation>
+<translation id="1984238998837921833">Memperbarui BitPop...</translation>
+<translation id="9102885271730191378">Pengelola Tugas - BitPop</translation>
+<translation id="3916917357864849352">Saat ini, BitPop mengimpor item berikut dari <ph name="BROWSER_COMPONENT"/>:</translation>
+<translation id="5243897687251941678">Cari bookmark Anda dalam menu BitPop atau di bilah bookmark.</translation>
+<translation id="5925519479755588070">Hampir diperbarui! Luncurkan ulang BitPop untuk menyelesaikan pembaruan.</translation>
+<translation id="4352003675682958984">Tersedia BitPop versi baru.</translation>
+<translation id="8972540218839637401">Terjadi kesalahan pada sistem operasi saat pemasangan berlangsung. Unduh BitPop lagi.</translation>
+<translation id="8935838934328341225"><ph name="EXTENSION_NAME"/> telah ditambahkan ke BitPop.</translation>
+<translation id="8871841738132225233">Gunakan Akun Google ini untuk menyinkronkan semua barang BitPop Anda?</translation>
+<translation id="8988481325911971852">Pemasangan gagal karena kesalahan yang tidak ditentukan. Unduh BitPop lagi.</translation>
+<translation id="660036136456272595">Profil Anda tidak dapat digunakan karena berasal dari BitPop versi yang lebih baru.
 
-Sebagian fitur mungkin tidak tersedia. Tentukan direktori profil yang berbeda atau gunakan versi Chromium yang lebih baru.</translation>
+Sebagian fitur mungkin tidak tersedia. Tentukan direktori profil yang berbeda atau gunakan versi BitPop yang lebih baru.</translation>
 <translation id="2712549016134575851">Terdeteksi konflik dengan aplikasi terinstal lain.</translation>
-<translation id="4881709374218686648">Sebelumnya Anda masuk dengan akun berbeda, dengan masuk, data Anda akan digabungkan. Pertimbangkan untuk membuat pengguna Chromium baru melalui <ph name="BEGIN_LINK"/>laman setelan<ph name="END_LINK"/> untuk barang Chromium Anda.</translation>
-<translation id="9013087743919948559">Tambahkan ke Chromium</translation>
-<translation id="6212496753309875659">Komputer ini sudah memiliki Chromium versi yang lebih anyar. Jika perangkat lunak tidak bekerja, copot Chromium dan coba lagi.</translation>
-<translation id="3014684866565908571">Utilitas Chromium</translation>
+<translation id="1095023322915848441">Sebelumnya Anda masuk dengan akun berbeda, dengan masuk, data Anda akan digabungkan. Pertimbangkan untuk membuat pengguna BitPop baru melalui <ph name="BEGIN_LINK"/>laman setelan<ph name="END_LINK"/> untuk barang BitPop Anda.</translation>
+<translation id="7862155441175671173">Tambahkan ke BitPop</translation>
+<translation id="5594704848342987755">Komputer ini sudah memiliki BitPop versi yang lebih anyar. Jika perangkat lunak tidak bekerja, copot BitPop dan coba lagi.</translation>
+<translation id="3422131153907641068">Utilitas BitPop</translation>
 <translation id="1298199220304005244">Dapatkan bantuan tentang penggunaan Chromium OS</translation>
-<translation id="1691304614444223855">Chromium Frame telah diperbarui. Luncurkan lagi browser Anda. Versi Chromium: <ph name="TODO_0001"/>, Versi Chromium Frame: <ph name="TODO_0002"/></translation>
+<translation id="8854394556488040390">BitPop Frame telah diperbarui. Luncurkan lagi browser Anda. Versi BitPop: <ph name="TODO_0001"/>, Versi Chromium Frame: <ph name="TODO_0002"/></translation>
 <translation id="130631256467250065">Perubahan Anda akan diterapkan pada saat Anda nanti menyalakan ulang perangkat.</translation>
-<translation id="1105130903706696483">Chromium tidak dimatikan dengan benar. Untuk membuka lagi laman yang sebelumnya Anda buka, klik Pulihkan.</translation>
-<translation id="1929939181775079593">Chromium tidak merespons. Luncurkan ulang sekarang?</translation>
+<translation id="2901348058800597589">BitPop tidak dimatikan dengan benar. Untuk membuka lagi laman yang sebelumnya Anda buka, klik Pulihkan.</translation>
+<translation id="5653921603290474550">BitPop tidak merespons. Luncurkan ulang sekarang?</translation>
 <translation id="6089587093203430357">Instan</translation>
-<translation id="2966088006374919794">Chromium harus meluncurkan aplikasi eksternal untuk menangani tautan <ph name="SCHEME"/>. Tautan yang diminta adalah <ph name="PROTOLINK"/>.</translation>
+<translation id="2410206016513008786">BitPop harus meluncurkan aplikasi eksternal untuk menangani tautan <ph name="SCHEME"/>. Tautan yang diminta adalah <ph name="PROTOLINK"/>.</translation>
 <translation id="8046283042877435986">Situs ini menyarankan Chromium Frame (sudah terpasang).</translation>
-<translation id="6287463253129672858">Tidak dapat memasang Chromium Frame versi yang sama dengan yang sedang Anda jalankan. Tutup Chromium Frame dan coba lagi.</translation>
-<translation id="2558235863893655150">Apakah Anda ingin Chromium menyimpan sandi Anda?</translation>
-<translation id="3398522627033804247">Buka
+<translation id="5523374683005655880">Tidak dapat memasang BitPop Frame versi yang sama dengan yang sedang Anda jalankan. Tutup BitPop Frame dan coba lagi.</translation>
+<translation id="5574763173398621221">Apakah Anda ingin BitPop menyimpan sandi Anda?</translation>
+<translation id="7730150800475367955">Buka
           <ph name="BEGIN_BOLD"/>
-          menu Chromium &gt;
+          menu BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="INTERNET_TITLE"/>
           &gt;
-          &quot;<ph name="OPTIONS_BUTTON"/>&quot;
+          "<ph name="OPTIONS_BUTTON"/>"
           <ph name="END_BOLD"/>
           (untuk Jaringan saat ini). Jika
           <ph name="BEGIN_BOLD"/>
-          tombol &quot;<ph name="PROXY_BUTTON"/>&quot;
+          tombol "<ph name="PROXY_BUTTON"/>"
           <ph name="END_BOLD"/> (di
           <ph name="BEGIN_BOLD"/>
           <ph name="NETWORK_TAB"/>
           <ph name="END_BOLD"/>
           tab) ada, klik tombol tersebut dan pastikan konfigurasi Anda
-          disetel ke &quot;Langsung&quot;.</translation>
-<translation id="1231416733874080281">Tampilkan menu Chromium</translation>
-<translation id="1688750314291223739">Siapkan Sinkronisasi untuk menyimpan fitur browser hasil personalisasi Anda ke web dan mengaksesnya dari Chromium di komputer mana saja.</translation>
+          disetel ke "Langsung".</translation>
+<translation id="5387335700352644169">Tampilkan menu BitPop</translation>
 <translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
 <translation id="8865765905101981392">Browser Internet</translation>
 <translation id="6424492062988593837">Chromium jadi semakin baik! Versi baru telah tersedia.</translation>
-<translation id="2910007522516064972">Tentang &amp;Chromium</translation>
-<translation id="8453117565092476964">Arsip pemasang rusak atau tidak valid. Unduh Chromium lagi.</translation>
-<translation id="2162026298602630383">Buka
+<translation id="6385431739515246076">Tentang &amp;BitPop</translation>
+<translation id="7521125380721653484">Arsip pemasang rusak atau tidak valid. Unduh BitPop lagi.</translation>
+<translation id="6836892784612884953">Buka
           <ph name="BEGIN_BOLD"/>
-          menu Chromium &gt;
+          menu BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
           <ph name="END_BOLD"/>
-          dan pastikan konfigurasi Anda disetel ke &quot;tanpa proxy&quot; atau &quot;langsung&quot;.</translation>
-<translation id="3249425904492147663">Anda mencoba menjangkau &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun server menampilkan sertifikat yang kedaluwarsa. Tidak tersedia informasi yang menunjukkan bahwa sertifikat tersebut telah disusupi sejak masa kedaluwarsa. Hal ini mengindikasikan bahwa Chromium tidak dapat menjamin bahwa Anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer Anda saat ini disetel ke <ph name="CURRENT_TIME"/>. Apakah sudah benar? Jika tidak, Anda perlu mengoreksi kesalahan ini dan menyegarkan laman.</translation>
+          dan pastikan konfigurasi Anda disetel ke "tanpa proxy" atau "langsung".</translation>
+<translation id="457806999714267838">Anda mencoba menjangkau &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun server menampilkan sertifikat yang kedaluwarsa. Tidak tersedia informasi yang menunjukkan bahwa sertifikat tersebut telah disusupi sejak masa kedaluwarsa. Hal ini mengindikasikan bahwa BitPop tidak dapat menjamin bahwa Anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer Anda saat ini disetel ke <ph name="CURRENT_TIME"/>. Apakah sudah benar? Jika tidak, Anda perlu mengoreksi kesalahan ini dan menyegarkan laman.</translation>
 <translation id="7196020411877309443">Mengapa saya melihat ini?</translation>
-<translation id="7483335560992089831">Tidak dapat memasang Chromium versi yang sama dengan yang sedang Anda jalankan. Tutup Chromium dan coba lagi.</translation>
-<translation id="7641113255207688324">Chromium bukan browser default Anda.</translation>
-<translation id="6208388956150196549">Peluncur Aplikasi Chromium</translation>
+<translation id="473359818469623008">Tidak dapat memasang BitPop versi yang sama dengan yang sedang Anda jalankan. Tutup BitPop dan coba lagi.</translation>
+<translation id="2595850371931815386">BitPop bukan browser default Anda.</translation>
+<translation id="1857156280997837230">Peluncur Aplikasi BitPop</translation>
 <translation id="4458285410772214805">Keluar dan masuk lagi agar perubahan ini diterapkan.</translation>
-<translation id="9109696651501887488">Tampilkan pintasan ke Peluncur Aplikasi Chromium di Bilah Tugas Windows.</translation>
+<translation id="6523007289492675308">Tampilkan pintasan ke Peluncur Aplikasi BitPop di Bilah Tugas Windows.</translation>
 <translation id="2119636228670142020">Tentang &amp;Chromium OS</translation>
-<translation id="1708666629004767631">Tersedia versi Chromium yang baru dan lebih aman.</translation>
-<translation id="1539981464052805551">Hak Cipta 2013 Penulis Chromium. Semua hak dilindungi.</translation>
-<translation id="6606161915035466984">Tampilkan Peluncur Aplikasi Chromium.</translation>
-<translation id="8616882682724010661">Lihat <ph name="BEGIN_LINK"/>manfaat lain<ph name="END_LINK"/> dengan masuk ke Chromium.</translation>
-<translation id="378917192836375108">Chromium memungkinkan Anda mengeklik nomor telepon pada web dan menghubunginya melalui Skype!</translation>
-<translation id="8724049448828509830">Unduhan saat ini sedang berlangsung. Anda ingin keluar dari Chromium dan membatalkan unduhan?</translation>
-<translation id="3360567213983886831">Biner Chromium</translation>
-<translation id="7503101070699687603">Host Plugin Chromium</translation>
-<translation id="2739631515503418643">Unduhan saat ini sedang berlangsung. Anda ingin keluar dari Chromium dan membatalkan unduhan?</translation>
-<translation id="9013262824292842194">Chromium memerlukan Windows Vista atau Windows XP dengan SP2 atau yang lebih baru.</translation>
-<translation id="1967743265616885482">Modul dengan nama yang sama biasanya konflik dengan Chromium.</translation>
-<translation id="4224199872375172890">Chromium sudah diperbarui.</translation>
-<translation id="374481098568514319">Komputer ini telah memiliki versi yang lebih anyar dari komponen Chromium. Gunakan pemasang yang lebih anyar.</translation>
-<translation id="6240281849816458190">Anda mencoba menjangkau &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun server menampilkan sertifikat yang belum valid. Tidak tersedia informasi yang menunjukkan bahwa sertifikat tersebut dapat dipercaya. Chromium tidak dapat menjamin bahwa Anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer Anda saat ini disetel ke <ph name="CURRENT_TIME"/>. Apakah sudah benar? Jika tidak, Anda perlu membenarkan jam sistem dan menyegarkan laman ini.</translation>
-<translation id="5498103559159810756">Chromium menggunakan mesin telusur default, yang saat ini disetel ke <ph name="PAGE_TITLE"/>. Anda ingin mempertahankan mesin telusur default?</translation>
-<translation id="5862307444128926510">Selamat Datang di Chromium</translation>
-<translation id="1622565934590470080">Komputer ini sudah memiliki Chromium dan Chromium Frame versi yang lebih anyar. Jika perangkat lunak tidak bekerja, copot Chromium dan Chromium Frame dan coba lagi.</translation>
-<translation id="7318036098707714271">File preferensi Anda rusak atau tidak valid.
+<translation id="4196382931981526364">Tersedia versi BitPop yang baru dan lebih aman.</translation>
+<translation id="1077424736315176936">Tampilkan Peluncur Aplikasi BitPop.</translation>
+<translation id="5330935702921516708">Lihat <ph name="BEGIN_LINK"/>manfaat lain<ph name="END_LINK"/> dengan masuk ke BitPop.</translation>
+<translation id="862266784641000464">BitPop memungkinkan Anda mengeklik nomor telepon pada web dan menghubunginya melalui Skype!</translation>
+<translation id="8072591166076742072">Unduhan saat ini sedang berlangsung. Anda ingin keluar dari BitPop dan membatalkan unduhan?</translation>
+<translation id="932207424499184915">Biner BitPop</translation>
+<translation id="3223104112377435850">Host Plugin BitPop</translation>
+<translation id="7826309952950470209">Unduhan saat ini sedang berlangsung. Anda ingin keluar dari BitPop dan membatalkan unduhan?</translation>
+<translation id="380873736468525691">BitPop memerlukan Windows Vista atau Windows XP dengan SP2 atau yang lebih baru.</translation>
+<translation id="2762974284703971745">Modul dengan nama yang sama biasanya konflik dengan BitPop.</translation>
+<translation id="5443433498537176573">BitPop sudah diperbarui.</translation>
+<translation id="5637727561937246825">Komputer ini telah memiliki versi yang lebih anyar dari komponen BitPop. Gunakan pemasang yang lebih anyar.</translation>
+<translation id="5082591353921977637">Anda mencoba menjangkau &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun server menampilkan sertifikat yang belum valid. Tidak tersedia informasi yang menunjukkan bahwa sertifikat tersebut dapat dipercaya. BitPop tidak dapat menjamin bahwa Anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer Anda saat ini disetel ke <ph name="CURRENT_TIME"/>. Apakah sudah benar? Jika tidak, Anda perlu membenarkan jam sistem dan menyegarkan laman ini.</translation>
+<translation id="1138135211676039883">BitPop menggunakan mesin telusur default, yang saat ini disetel ke <ph name="PAGE_TITLE"/>. Anda ingin mempertahankan mesin telusur default?</translation>
+<translation id="185658551912723674">Selamat Datang di BitPop</translation>
+<translation id="6808688532552992663">Komputer ini sudah memiliki BitPop dan BitPop Frame versi yang lebih anyar. Jika perangkat lunak tidak bekerja, copot BitPop dan BitPop Frame dan coba lagi.</translation>
+<translation id="1909867102505992367">File preferensi Anda rusak atau tidak valid.
 
-Chromium tidak dapat memulihkan setelan Anda.</translation>
-<translation id="6403826409255603130">Chromium adalah browser web yang menjalankan laman web dan aplikasi dengan kecepatan kilat. Browser ini cepat, stabil, dan mudah digunakan. Jelajahi web lebih aman dengan perlindungan dari perangkat lunak perusak dan phishing yang tertanam di dalam Chromium.</translation>
-<translation id="2927042866129133279">Argumen tidak valid. Chromium Frame tidak dapat dipasang dalam mode siap tanpa memasang Chromium juga.</translation>
-<translation id="2572494885440352020">Pembantu Chromium</translation>
-<translation id="442817494342774222">Chromium dikonfigurasi untuk otomatis terbuka ketika Anda memulai komputer.</translation>
+BitPop tidak dapat memulihkan setelan Anda.</translation>
+<translation id="4933902704814222889">BitPop adalah browser web yang menjalankan laman web dan aplikasi dengan kecepatan kilat. Browser ini cepat, stabil, dan mudah digunakan. Jelajahi web lebih aman dengan perlindungan dari perangkat lunak perusak dan phishing yang tertanam di dalam BitPop.</translation>
+<translation id="7673336527696184948">Argumen tidak valid. BitPop Frame tidak dapat dipasang dalam mode siap tanpa memasang BitPop juga.</translation>
+<translation id="5583217122091744450">Pembantu BitPop</translation>
+<translation id="6404599307042403560">BitPop dikonfigurasi untuk otomatis terbuka ketika Anda memulai komputer.</translation>
 <translation id="8974095189086268230">OS Chromium terwujud karena <ph name="BEGIN_LINK_CROS_OSS"/>perangkat lunak sumber terbuka<ph name="END_LINK_CROS_OSS"/> tambahan.</translation>
 <translation id="1221340462641866827">OS Chromium tidak mendukung peluncuran aplikasi eksternal untuk menangani tautan <ph name="SCHEME"/>. Tautan yang diminta adalah <ph name="PROTOLINK"/>.</translation>
 </translationbundle>

@@ -1,0 +1,15 @@
+{
+  "name": "Share via BitPop",
+  "description": "Provides Facebook sharing features for the web you browse",
+  "icons": {
+    "16": "images/icon-16.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "permissions": ["contextMenus", "tabs", "http://*/*", "https://*/*"],
+  "version": "0.1",
+  "manifest_version": 2
+}

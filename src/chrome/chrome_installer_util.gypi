@@ -17,6 +17,8 @@
           'installer/util/app_commands.h',
           'installer/util/auto_launch_util.cc',
           'installer/util/auto_launch_util.h',
+          'installer/util/bitpop_distribution.cc',
+          'installer/util/bitpop_distribution.h',
           'installer/util/browser_distribution.cc',
           'installer/util/browser_distribution.h',
           'installer/util/callback_work_item.cc',

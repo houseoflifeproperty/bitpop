@@ -1,0 +1,53 @@
+<!--
+// BitPop browser. Facebook chat integration part.
+// Copyright (C) 2014 BitPop AS
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html>
+<head>
+  <link rel="stylesheet" href="css/jewel-style.css" type="text/css" media="screen" charset="utf-8">
+  <style type="text/css">
+    /*html, body {
+      width: 350px;
+      height: 300px;
+    }
+    */
+    .notification-content img {
+      padding-right: 3px;
+      vertical-align: middle;
+    }
+    .loading {
+      position: relative;
+      width: 100%;
+      height: 200px;
+      background-image: url('/images/indicator_white_large.gif');
+      background-attachment:fixed;
+      background-repeat:no-repeat;
+      background-position: center center;
+    }
+  </style>
+  <script src="js/jquery.min.js"></script>
+  <script src="js/options.js"></script>
+  <script src="js/humane.js"></script>
+  <script type="text/javascript" charset="utf-8" src="js/popup.js"></script>
+</head>
+<body>
+  <div id="header">
+    <div class='title'>Notifications</div>
+  </div>
+  <div id="feed" class="loading"></div>
+  <div id="footer"></div>
+ </body>
+</html>

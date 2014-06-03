@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ja">
 <translation id="6879617193011158416">ブックマーク バーを切り替える</translation>
@@ -66,7 +66,7 @@
 <translation id="4940047036413029306">引用符</translation>
 <translation id="1497897566809397301">ローカルへのデータ設定を許可する（推奨）</translation>
 <translation id="3275778913554317645">ウィンドウとして開く</translation>
-<translation id="4553117311324416101">このまま続行すると、不正なソフトウェアがパソコンにインストールされる可能性があります。過去にこのサイトにアクセスしたことがある場合や、このサイトを信用している場合でも、最近このサイトがハッカーによって侵害された可能性があります。今すぐこのサイトへのアクセスを中止し、明日もう一度お試しいただくか、別のサイトをご利用ください。</translation>
+<translation id="8198393002783366468">このまま続行すると、不正なソフトウェアがパソコンにインストールされる可能性があります。過去にこのサイトにアクセスしたことがある場合や、このサイトを信用している場合でも、最近このサイトがハッカーによって侵害された可能性があります。今すぐこのサイトへのアクセスを中止し、明日もう一度お試しいただくか、別のサイトをご利用ください。</translation>
 <translation id="8867568208303837180">送信しています...</translation>
 <translation id="509988127256758334">検索(&amp;N):</translation>
 <translation id="1420684932347524586">ランダムな RSA 秘密鍵を生成できませんでした。</translation>
@@ -229,7 +229,7 @@
 <translation id="1818606096021558659">ページ</translation>
 <translation id="1549045574060481141">ダウンロードを確認</translation>
 <translation id="5388588172257446328">ユーザー名:</translation>
-<translation id="1657406563541664238">使用統計データや障害レポートを Google に自動送信して <ph name="PRODUCT_NAME"/> の機能向上に役立てる</translation>
+<translation id="5757566435961687655">使用統計データや障害レポートを House of Life に自動送信して <ph name="PRODUCT_NAME"/> の機能向上に役立てる</translation>
 <translation id="7982789257301363584">ネットワーク</translation>
 <translation id="2271281383664374369">この URL に対して拡張機能が行うリクエストが一時的に抑制されています。</translation>
 <translation id="8528962588711550376">ログインしています。</translation>
@@ -245,7 +245,7 @@
 <translation id="1776883657531386793"><ph name="OID"/>: <ph name="INFO"/></translation>
 <translation id="1510030919967934016">このページは、あなたの現在地を追跡できないようブロックされています。</translation>
 <translation id="8848519885565996859">ユーザー定義の URL リンク フレーム</translation>
-<translation id="4640525840053037973">Google アカウントでログイン</translation>
+<translation id="4550196943338771146">BitPop アカウントでログイン</translation>
 <translation id="5255315797444241226">入力したパスフレーズが正しくありません。</translation>
 <translation id="762917759028004464">既定のブラウザは <ph name="BROWSER_NAME"/> に設定されています。</translation>
 <translation id="9213479837033539041">残り <ph name="NUMBER_MANY"/> 秒</translation>
@@ -288,8 +288,8 @@
 <translation id="1801827354178857021">ピリオド</translation>
 <translation id="4560332071395409256">まず [<ph name="BEGIN_BOLD"/>スタート<ph name="END_BOLD"/>] をクリックして [<ph name="BEGIN_BOLD"/>ファイル名を指定して実行<ph name="END_BOLD"/>] をクリックし、<ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/> と入力して [<ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>] をクリックします。</translation>
 <translation id="2179052183774520942">検索エンジンの追加</translation>
-<translation id="4043223219875055035">アプリが設定を同期できるように、またその他のカスタマイズされたサービスを提供できるようにするには、Google アカウントでログインしてください。</translation>
-<translation id="6868050610674841964">ログインすると、Google アカウントとデータを同期します。これにより、ブックマーク、履歴などの設定をどの端末からでも使用できます。</translation>
+<translation id="7333287746989217896">アプリが設定を同期できるように、またその他のカスタマイズされたサービスを提供できるようにするには、BitPop アカウントでログインしてください。</translation>
+<translation id="5804885986789001150">ログインすると、Facebook/BitPop アカウントとデータを同期します。これにより、ブックマーク、履歴などの設定をどの端末からでも使用できます。</translation>
 <translation id="5498951625591520696">サーバーにアクセスできません。</translation>
 <translation id="1621207256975573490">名前を付けてフレームを保存(&amp;F)...</translation>
 <translation id="4681260323810445443">ウェブページ（<ph name="URL"/>）へのアクセスを許可されていません。ログインが必要となる場合があります。</translation>
@@ -411,7 +411,7 @@
 <translation id="8194465509832052438">コマンドを設定する</translation>
 <translation id="4422347585044846479">このページのブックマークを編集します</translation>
 <translation id="2452539774207938933">次のユーザーに切り替える: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome ではブラウザに入力された内容を Google のサーバーに送信することで高度なスペルチェックを実現し、Google 検索で使用されているスペルチェック テクノロジーを活用できます。</translation>
+<translation id="8810891758424955762">BitPop ではブラウザに入力された内容を Google のサーバーに送信することで高度なスペルチェックを実現し、Google 検索で使用されているスペルチェック テクノロジーを活用できます。</translation>
 <translation id="1880905663253319515">証明書「<ph name="CERTIFICATE_NAME"/>」を削除しますか？</translation>
 <translation id="8546306075665861288">画像キャッシュ</translation>
 <translation id="1168100932582989117">Google ネーム サーバー</translation>
@@ -464,7 +464,7 @@
 <translation id="5145331109270917438">更新日</translation>
 <translation id="6596816719288285829">IP アドレス</translation>
 <translation id="4508265954913339219">起動に失敗しました</translation>
-<translation id="1884405719612801980">ヒューリスティック タイプ: <ph name="HEURISTIC_TYPE"/> サーバー タイプ: <ph name="SERVER_TYPE"/> フィールドの署名: <ph name="FIELD_SIGNATURE"/> フォームの署名: <ph name="FORM_SIGNATURE"/> テスト用 ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
+<translation id="1884405719612801980">ヒューリスティック タイプ: <ph name="HEURISTIC_TYPE"/> サーバー タイプ: <ph name="SERVER_TYPE"/> フィールドの署名: <ph name="FIELD_SIGNATURE"/> フォームの署名: <ph name="FORM_SIGNATURE"/> テスト用 ID: "<ph name="EXPERIMENT_ID"/>"</translation>
 <translation id="8656768832129462377">確認しない</translation>
 <translation id="715487527529576698">初期の中国語モードを簡体中国語にする</translation>
 <translation id="6896830120821965585">このパソコンにインストールされているすべてのプリンタに Google クラウド プリント サービスを接続するバックグラウンド サービスを有効にします。この Labs 機能を有効にすると、[設定] の [高度な設定] セクションで Google アカウントにログインすることで、Google クラウド プリント コネクタを有効にすることができます。</translation>
@@ -496,7 +496,6 @@
 <translation id="1046059554679513793">この名前は既に使用されています。</translation>
 <translation id="3887847548716051874">このマイクとカメラをこのサイトが使用することを常に許可します</translation>
 <translation id="4497097279402334319">ネットワークに接続できませんでした。</translation>
-<translation id="7342729285348293164">Google アカウントを使って <ph name="PRODUCT_NAME"/> にログインすると、カスタマイズしたブラウザ機能をウェブ上に保存し、どのパソコンの <ph name="PRODUCT_NAME"/> でも使用できるようになります。お気に入りの Google サービスにも自動的にログインできます。</translation>
 <translation id="2542049655219295786">Google Table</translation>
 <translation id="3899879303189199559">1 年以上オフライン</translation>
 <translation id="5303618139271450299">このウェブページは見つかりません</translation>
@@ -643,7 +642,6 @@
 <translation id="773426152488311044">現在、あなたが唯一の <ph name="PRODUCT_NAME"/> ユーザーです。</translation>
 <translation id="2042078858148122628">DNS ルックアップでエラーが発生したため、<ph name="HOST_NAME"/> にあるサーバーを見つけることができません。DNS は、ウェブサイトの名前をインターネット アドレスに変換するためのウェブ サービスです。このエラーはほとんどの場合、インターネットに接続されていないか、ネットワークの設定が間違っていることが原因です。ただし、DNS サーバーの応答がない、ファイアウォールによって <ph name="PRODUCT_NAME"/> からのネットワーク アクセスがブロックされている、などの原因で発生する場合もあります。</translation>
 <translation id="2159087636560291862">この証明書はコンピュータが信頼する認証局によって確認されていません。ウェブサイトの正当性を主張する証明書を作成することは誰でもできるため、信頼できる第三機関による確認が必要になり、確認されていない証明書の ID 情報は無効です。したがって、通信している相手が、<ph name="DOMAIN"/> なのか、悪意のあるユーザーが作成した証明書によって正当と主張する <ph name="DOMAIN2"/> なのかを確認することができません。これ以上、処理を続行しないでください。</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> では、Google パスワードまたは任意のパスフレーズを使ってデータを暗号化する必要があります。</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">認証局ではない</translation>
 <translation id="6099520380851856040">発生: <ph name="CRASH_TIME"/></translation>
@@ -663,7 +661,7 @@
 <translation id="9121814364785106365">固定されたタブとして開く</translation>
 <translation id="6292030868006209076">タミル語の入力方法（ITRANS）</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_DOMAIN"/> の <ph name="PEPPER_PLUGIN_NAME"/> がお使いのパソコンへのアクセスを求めています。</translation>
-<translation id="2128450505147514836">添付ファイルはデバッグのため Google のサーバーにアップロードされます。&lt;br&gt;
+<translation id="7411702401114360503">添付ファイルはデバッグのため BitPop のサーバーにアップロードされます。&lt;br&gt;
         注: フィードバック レポートにつき 1 つのファイルを添付できます（上限 3 MB）</translation>
 <translation id="3435896845095436175">有効にする</translation>
 <translation id="5849294688757445020">すべてのページで GPU 合成を行う</translation>
@@ -847,7 +845,7 @@
 <translation id="5120247199412907247">詳細設定</translation>
 <translation id="567881659373499783">バージョン <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">セーフ ブラウジングのプライバシー ポリシー</translation>
-<translation id="5105859138906591953">ツールバーのブックマークを Google Chrome にインポートするには Google アカウントにログインする必要があります。ログインしてから再度インポートしてください。</translation>
+<translation id="5189894578581316474">ツールバーのブックマークを Google BitPop にインポートするには Google アカウントにログインする必要があります。ログインしてから再度インポートしてください。</translation>
 <translation id="8899851313684471736">新しいウィンドウで開く(&amp;W)</translation>
 <translation id="4110342520124362335"><ph name="DOMAIN"/> からの Cookie がブロックされました。</translation>
 <translation id="2198315389084035571">中国語（簡体字）</translation>
@@ -916,7 +914,6 @@
 <translation id="1049376040497900836"><ph name="SHORT_PRODUCT_NAME"/> のバージョン変更数を表示します</translation>
 <translation id="1422780722984745882">複数の Location ヘッダーを受信しました。これは、
         HTTP レスポンス分割攻撃を防ぐために禁止されています。</translation>
-<translation id="7787129790495067395">パスフレーズを使用しています。パスフレーズを忘れた場合は、Google ダッシュボードで同期をリセットすると Google サーバーからデータを削除できます。</translation>
 <translation id="721997939566478439">OK</translation>
 <translation id="6612611129072884913">このページを起動画面に固定...</translation>
 <translation id="3380365263193509176">不明なエラー</translation>
@@ -1041,7 +1038,7 @@
 <translation id="2955913368246107853">検索バーを閉じる</translation>
 <translation id="8864170386249720785">携帯端末共通のSSL設定:</translation>
 <translation id="2560788951337264832">残り <ph name="NUMBER_ZERO"/> 分</translation>
-<translation id="3914942725612686145">Chrome にログインしました。開いているタブ、ブックマーク、アドレスバーのデータが Google アカウントと同期します。</translation>
+<translation id="6896530527102607056">Chrome にログインしました。開いているタブ、ブックマーク、アドレスバーのデータが Facebook/BitPop アカウントと同期します。</translation>
 <translation id="5642508497713047">CRL の署名者</translation>
 <translation id="813082847718468539">サイト情報を表示</translation>
 <translation id="127353061808977798">フォントとエンコード</translation>
@@ -1396,7 +1393,7 @@
 <translation id="7092106376816104">ポップアップの例外</translation>
 <translation id="4830475881783902092">クライアント ID:</translation>
 <translation id="4600958291864306415">生成しています...</translation>
-<translation id="8594787581355215556"><ph name="USER_EMAIL_ADDRESS"/> としてログインしています。<ph name="BEGIN_LINK"/>Google ダッシュボード<ph name="END_LINK"/>で同期データを管理します。</translation>
+<translation id="2669230071943955873"><ph name="USER_EMAIL_ADDRESS"/> としてログインしています。<ph name="BEGIN_LINK"/>BitPop ダッシュボード<ph name="END_LINK"/>で同期データを管理します。</translation>
 <translation id="4338600611020922010">ホーム画面に追加</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> のインストールを完了できませんでした。ただし、今後もディスク イメージから実行できます。</translation>
 <translation id="1952837113524940233">新しいネットワーク ハンドラを有効にする</translation>
@@ -1416,7 +1413,7 @@
 <translation id="4250680216510889253">いいえ</translation>
 <translation id="5109044022078737958">ミア</translation>
 <translation id="6291953229176937411">Finder で表示(&amp;S)</translation>
-<translation id="8598687241883907630">Google アカウントを切断...</translation>
+<translation id="3684341060830149235">Facebook/BitPop アカウントを切断...</translation>
 <translation id="2556718757702023317">ファイル「<ph name="FILE_NAME"/>」をオフラインに保存するには、<ph name="TOTAL_FILE_SIZE"/> の空き容量を確保する必要があります。次の方法をお試しください。<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>オフラインでのアクセスが不要になったファイルの固定を解除する<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>ダウンロード フォルダからファイルを削除する<ph name="MARKUP_5"/></translation>
@@ -1500,7 +1497,7 @@
 <translation id="4181898366589410653">サーバー証明書の取り消し機構が見つかりません。</translation>
 <translation id="1515163294334130951">起動</translation>
 <translation id="6914291514448387591"><ph name="PLUGIN_NAME"/> を実行するにはユーザーの許可が必要です。</translation>
-<translation id="1123316951456119629">Google アカウントを <ph name="PRODUCT_NAME"/> から切り離すと、データはパソコンに残りますが、データに加えた変更は Google アカウントに同期されなくなります。既に Google アカウントに保存されているデータは、<ph name="BEGIN_LINK"/>Google ダッシュボード<ph name="END_LINK"/>を使用して削除するまで保持されます。</translation>
+<translation id="3144050057163527741">BitPop アカウントを <ph name="PRODUCT_NAME"/> から切り離すと、データはパソコンに残りますが、データに加えた変更は Google アカウントに同期されなくなります。既に Google アカウントに保存されているデータは、<ph name="BEGIN_LINK"/>Google ダッシュボード<ph name="END_LINK"/>を使用して削除するまで保持されます。</translation>
 <translation id="8705331520020532516">シリアル番号</translation>
 <translation id="1665770420914915777">新しいタブの画面を表示する</translation>
 <translation id="5456409301717116725">この拡張機能には、鍵ファイル「<ph name="KEY_PATH"/>」が含まれていますが、おそらくその必要性はありません。</translation>
@@ -1716,8 +1713,8 @@
 <translation id="7434823369735508263">Dvorak 配列キーボード（英国）</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> 日</translation>
 <translation id="8825366169884721447">ネットワーク リクエストのリクエスト ヘッダー「<ph name="HEADER_NAME"/>」への変更内容が別の拡張機能（<ph name="EXTENSION_NAME"/>）と競合したため、この拡張機能はヘッダーを変更できませんでした。</translation>
-<translation id="5308845175611284862"><ph name="PRODUCT_NAME"/> を同期すると、ブックマークや設定などのユーザー データを複数のパソコンで簡単に共有できます。
-        <ph name="PRODUCT_NAME"/> では、ユーザーが Google アカウントにログインしたときにユーザー データがオンラインに保存されて同期されます。</translation>
+<translation id="291445075019511713"><ph name="PRODUCT_NAME"/> を同期すると、ブックマークや設定などのユーザー データを複数のパソコンで簡単に共有できます。
+        <ph name="PRODUCT_NAME"/> では、ユーザーが BitPop アカウントにログインしたときにユーザー データがオンラインに保存されて同期されます。</translation>
 <translation id="1707463636381878959">他のユーザーとネットワークを共有</translation>
 <translation id="3024663005179499861">ポリシー タイプが間違っています</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -1908,7 +1905,7 @@
 <translation id="1601560923496285236">適用</translation>
 <translation id="2390045462562521613">このネットワークの記録を削除</translation>
 <translation id="3348038390189153836">リムーバブル デバイスが検出されました</translation>
-<translation id="8005540215158006229">Chrome はすぐに利用できるようになります。</translation>
+<translation id="3674182693516842999">BitPop はすぐに利用できるようになります。</translation>
 <translation id="1666788816626221136">他のどのカテゴリにも適合しない証明書がファイルに格納されています:</translation>
 <translation id="5698727907125761952">公式アーティスト</translation>
 <translation id="4821935166599369261">プロファイル記録の開始(&amp;P)</translation>
@@ -2061,7 +2058,7 @@
 <translation id="748138892655239008">証明書の基本制約</translation>
 <translation id="457386861538956877">その他...</translation>
 <translation id="9210991923655648139">スクリプトにアクセス可能:</translation>
-<translation id="4152177296285305182">パスフレーズを知っているユーザーだけが暗号化されたデータを読み取ることができます。パスフレーズは Google には送信されず、保存されることもありません。パスフレーズを忘れた場合は同期をリセットする必要があります。</translation>
+<translation id="8792136381897173209">パスフレーズを知っているユーザーだけが暗号化されたデータを読み取ることができます。パスフレーズは BitPop には送信されず、保存されることもありません。パスフレーズを忘れた場合は同期をリセットする必要があります。</translation>
 <translation id="1950295184970569138">* Google プロフィール写真（読み込み中）</translation>
 <translation id="8063491445163840780">タブ 4 を有効にする</translation>
 <translation id="5473544328731861874">インテントを削除</translation>
@@ -2220,7 +2217,6 @@
 <translation id="2563185590376525700">カエル</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> は <ph name="NETWORK_ID"/> に接続できませんでした。別のネットワークを選択するか、もう一度お試しください。</translation>
 <translation id="2086712242472027775">このアカウントは <ph name="PRODUCT_NAME"/> では使用できません。ドメイン管理者にお問い合わせいただくか、通常の Google アカウントでログインしてください。</translation>
-<translation id="1373074393717692190">Googleアカウントを使って<ph name="PRODUCT_NAME"/>にログインすると、カスタマイズしたブラウザ機能をウェブ上に保存し、どの携帯端末の<ph name="PRODUCT_NAME"/>でも使用できるようになります。お気に入りのGoogleサービスにも自動的にログインできます。</translation>
 <translation id="7222232353993864120">メール アドレス</translation>
 <translation id="2128531968068887769">ネイティブ クライアント</translation>
 <translation id="7175353351958621980">ロード元:</translation>
@@ -2475,7 +2471,7 @@
 <translation id="1752977958630076881">ブラウザを終了するまでローカル データを保存する</translation>
 <translation id="7853202427316060426">アクティビティ</translation>
 <translation id="8550022383519221471">お客様のドメインでは同期サービスをご利用いただけません。</translation>
-<translation id="1436238710092600782">Google アカウントの作成</translation>
+<translation id="8612897762498195031">BitPop アカウントの作成</translation>
 <translation id="3355823806454867987">プロキシ設定の変更...</translation>
 <translation id="2882324896611949356">Google の連絡先をダウンロードしてアプリ リストに表示することを有効にします。</translation>
 <translation id="4780374166989101364">試験運用版の拡張機能 API を有効にします。試験運用版の API を使用した拡張機能は、拡張機能ギャラリーにはアップロードできませんのでご注意ください。</translation>
@@ -2569,7 +2565,7 @@
 <translation id="8314066201485587418">ブラウザの終了時に Cookie と他のサイトのデータを削除する</translation>
 <translation id="4094105377635924481">タブ コンテキスト メニューにグループ化を追加</translation>
 <translation id="765676359832457558">詳細設定を表示しない...</translation>
-<translation id="7626032353295482388">Chrome にようこそ</translation>
+<translation id="185658551912723674">BitPop にようこそ</translation>
 <translation id="8655295600908251630">チャンネル</translation>
 <translation id="8250690786522693009">ラテン文字</translation>
 <translation id="2119721408814495896"><ph name="CLOUD_PRINT_NAME"/> コネクタを使用するには、Microsoft XML Paper Specification Essentials Pack をインストールする必要があります。</translation>
@@ -2960,7 +2956,7 @@
 <translation id="9072684888578654899">&lt;p&gt;
           他のデバイスの Chrome で開いたタブがここに表示されます。
           &lt;/p&gt;
-          &lt;a href=&quot;#enablesync&quot;&gt;
+          &lt;a href="#enablesync"&gt;
           同期を有効にします。
           &lt;/p&gt;</translation>
 <translation id="889901481107108152">この試験運用機能は、お使いのプラットフォームでは利用できません。</translation>
@@ -3109,7 +3105,7 @@
 <translation id="6007237601604674381">移動できませんでした。<ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">パッケージ化の処理中に一時的な zip ファイルを作成できませんでした。</translation>
 <translation id="1881456419707551346">接続の詳細</translation>
-<translation id="1064912851688322329">Google アカウントを切断</translation>
+<translation id="1175819364738375266">Facebook/BitPop アカウントを切断</translation>
 <translation id="1294298200424241932">信頼の設定を変更:</translation>
 <translation id="1407135791313364759">すべて開く</translation>
 <translation id="1434928358870966081">アクセラレーション 2D キャンバスを無効にする</translation>
@@ -3314,7 +3310,7 @@
 <translation id="5293659407874396561"><ph name="SUBJECT"/>（<ph name="ISSUER"/>）</translation>
 <translation id="2115926821277323019">有効な URL を入力してください</translation>
 <translation id="3464726836683998962">モバイル データ ローミングを無効にする</translation>
-<translation id="8986494364107987395">使用統計データや障害レポートを自動的に Google に送信する</translation>
+<translation id="7133428520955276418">使用統計データや障害レポートを自動的に House of Life に送信する</translation>
 <translation id="7070714457904110559">位置情報機能で使用する試験運用版の拡張機能を有効にします。使用できる場合は、オペレーティング システム現在地 API も使用します。また、より精度の高い位置情報を提供するために、追加のローカル ネットワーク設定データを Google の位置情報サービスに送信します。</translation>
 <translation id="6701535245008341853">プロフィールを取得できませんでした。</translation>
 <translation id="8303655282093186569">Pinyin 入力設定</translation>
@@ -3350,7 +3346,7 @@
 <translation id="4762295713053835808">個人設定</translation>
 <translation id="3445092916808119474">メインにする</translation>
 <translation id="6374100501221763867">ハードウェア アクセラレーションによる動画デコードを無効にする</translation>
-<translation id="7477347901712410606">パスフレーズをお忘れの場合、<ph name="BEGIN_LINK"/>Google ダッシュボード<ph name="END_LINK"/>から同期を停止してリセットしてください。</translation>
+<translation id="1257410854647617646">パスフレーズをお忘れの場合、<ph name="BEGIN_LINK"/>BitPop ダッシュボード<ph name="END_LINK"/>から同期を停止してリセットしてください。</translation>
 <translation id="3085235303151103497">パッケージ化されたアプリのデバッグの有効化。</translation>
 <translation id="2645575947416143543">ただし、独自の証明書を生成している組織では、その証明書を使用して組織内部のウェブサイトに接続した場合に、この問題を安全に解決できる場合があります。組織のルート証明書は「ルート証明書」としてインポートできます。インポート後、組織により発行または検証された証明書はその信頼性が保証され、次回から、内部のウェブサイトへの接続時にこのエラーは表示されなくなります。お使いのパソコンに新しいルート証明書を追加する方法については、組織のサポート スタッフにお問い合わせください。</translation>
 <translation id="1056898198331236512">警告</translation>
@@ -3550,7 +3546,7 @@
 <translation id="4971925105143343452">一部</translation>
 <translation id="3454157711543303649">起動を完了</translation>
 <translation id="884923133447025588">取り消し機構が見つかりません。</translation>
-<translation id="7801746894267596941">パスフレーズを知っているユーザーだけが暗号化されたデータを読み取ることができます。パスフレーズは Google には送信されず、保存されることもありません。パスフレーズを忘れた場合は次の操作を行う必要があります。</translation>
+<translation id="2077681924461579449">パスフレーズを知っているユーザーだけが暗号化されたデータを読み取ることができます。パスフレーズは BitPop には送信されず、保存されることもありません。パスフレーズを忘れた場合は次の操作を行う必要があります。</translation>
 <translation id="5406835729608468430">次のサービスで表示…</translation>
 <translation id="291886813706048071">ここで <ph name="SEARCH_ENGINE"/> を使用して検索できます</translation>
 <translation id="556042886152191864">ボタン</translation>
@@ -3734,7 +3730,7 @@
 <translation id="8948393169621400698"><ph name="HOST"/> のプラグインを常に許可する</translation>
 <translation id="6527303717912515753">共有</translation>
 <translation id="4285498937028063278">固定を解除</translation>
-<translation id="2588322182880276190">Chrome ロゴ</translation>
+<translation id="193954205383164322">BitPop ロゴ</translation>
 <translation id="7893008570150657497">パソコンから画像、音楽、その他のメディアにアクセスする</translation>
 <translation id="5449624072515809082">入力中のテキストの自動修正をオンにします。同期スペルチェックとこの機能は同時に使用できません。</translation>
 <translation id="8291808604460602261">ウェブ インテントを許可してアプリケーションへの接続を有効にする</translation>
@@ -4078,7 +4074,7 @@
 <translation id="3021678814754966447">フレームのソースを表示(&amp;V)</translation>
 <translation id="8601206103050338563">TLS WWW クライアント認証</translation>
 <translation id="1692799361700686467">複数サイトからの Cookie が許可されました。</translation>
-<translation id="5187295959347858724"><ph name="SHORT_PRODUCT_NAME"/> にログインしています。ブックマーク、履歴、その他の設定は Google アカウントに同期されます。</translation>
+<translation id="6928105098560478094"><ph name="SHORT_PRODUCT_NAME"/> にログインしています。ブックマーク、履歴、その他の設定は BitPop アカウントに同期されます。</translation>
 <translation id="7381706763856392587">「<ph name="FILENAME"/>」を削除します</translation>
 <translation id="529232389703829405"><ph name="DATE"/>に <ph name="DATA_AMOUNT"/> のデータを購入しました</translation>
 <translation id="7419106976560586862">プロフィール パス</translation>
@@ -4147,7 +4143,7 @@
 <translation id="6692173217867674490">パスフレーズが正しくありません</translation>
 <translation id="5550431144454300634">入力を自動的に訂正する</translation>
 <translation id="3308006649705061278">組織単位（OU）</translation>
-<translation id="8912362522468806198">Google アカウントを使用</translation>
+<translation id="9034203691147880734">BitPop アカウントを使用</translation>
 <translation id="4839847978919684242"><ph name="SELCTED_FILES_COUNT"/> 個のアイテムを選択</translation>
 <translation id="4443536555189480885">ヘルプ(&amp;H)</translation>
 <translation id="6993309531105463648">1 つまたは 2 つのブラウザ/アプリ ウィンドウの自動ウィンドウ配置を無効にします。</translation>
@@ -4521,7 +4517,7 @@
 <translation id="1177437665183591855">不明なサーバー証明書エラー</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> がカメラとマイクへのアクセスを求めています。</translation>
 <translation id="8467473010914675605">韓国語 IME</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> では、ユーザー データを Google アカウントと安全に同期することができます。すべてのデータを常に同期するか、同期するデータのタイプと暗号化設定を選択してカスタマイズしてください。</translation>
+<translation id="7938022885346429483"><ph name="PRODUCT_NAME"/> では、ユーザー データを BitPop アカウントと安全に同期することができます。すべてのデータを常に同期するか、同期するデータのタイプと暗号化設定を選択してカスタマイズしてください。</translation>
 <translation id="2639739919103226564">ステータス:</translation>
 <translation id="824543159844843373">ランチャー アイテム 3 をアクティブにする</translation>
 <translation id="6923900367903210484">著作権</translation>
@@ -4549,7 +4545,7 @@
 <translation id="2101797668776986011">Pepper 3D</translation>
 <translation id="1581962803218266616">Finder で表示</translation>
 <translation id="9100765901046053179">詳細設定</translation>
-<translation id="203168018648013061">同期エラー: Google ダッシュボードから同期をリセットしてください。</translation>
+<translation id="2936690273131526650">同期エラー: BitPop ダッシュボードから同期をリセットしてください。</translation>
 <translation id="1405126334425076373">マウス カーソル</translation>
 <translation id="6671493224572088110"><ph name="VIDEO_NAME"/> を再生</translation>
 <translation id="6096326118418049043">X.500 名</translation>
@@ -4670,7 +4666,7 @@
 <translation id="2050339315714019657">縦</translation>
 <translation id="6978839998405419496"><ph name="NUMBER_ZERO"/> days ago</translation>
 <translation id="8273027367978594412">有効な場合、デスクトップ版 Chrome でゲスト ユーザーを利用できるようになります。</translation>
-<translation id="8188199528179562676">Google アカウントを <ph name="PRODUCT_NAME"/> から切り離すと、データはこの携帯端末に残りますが、データに加えた変更は Google アカウントに同期されなくなります。既に Google アカウントに保存されたデータは、<ph name="BEGIN_LINK"/>Google ダッシュボード<ph name="END_LINK"/>を使用して削除するまで保持されます。</translation>
+<translation id="3972854587947107012">BitPop アカウントを <ph name="PRODUCT_NAME"/> から切り離すと、データはこの携帯端末に残りますが、データに加えた変更は Google アカウントに同期されなくなります。既に Google アカウントに保存されたデータは、<ph name="BEGIN_LINK"/>Google ダッシュボード<ph name="END_LINK"/>を使用して削除するまで保持されます。</translation>
 <translation id="8261490674758214762">次の権限にアクセス可能:</translation>
 <translation id="5112577000029535889">デベロッパー ツール(&amp;D)</translation>
 <translation id="2301382460326681002">拡張機能のルート ディレクトリが無効です。</translation>

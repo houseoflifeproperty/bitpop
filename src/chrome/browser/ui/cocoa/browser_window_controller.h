@@ -34,6 +34,8 @@ class BrowserWindowCocoa;
 @class DevToolsController;
 @class DownloadShelfController;
 class ExtensionKeybindingRegistryCocoa;
+@class FacebookChatbarController;
+@class FacebookSidebarController;
 @class FindBarCocoaController;
 @class FullscreenWindow;
 @class InfoBarContainerController;
@@ -68,7 +70,9 @@ class WebContents;
   scoped_nsobject<FindBarCocoaController> findBarCocoaController_;
   scoped_nsobject<InfoBarContainerController> infoBarContainerController_;
   scoped_nsobject<DownloadShelfController> downloadShelfController_;
+  scoped_nsobject<FacebookChatbarController> facebookChatbarController_;
   scoped_nsobject<BookmarkBarController> bookmarkBarController_;
+  scoped_nsobject<FacebookSidebarController> facebookSidebarController_;
   scoped_nsobject<DevToolsController> devToolsController_;
   scoped_nsobject<PreviewableContentsController> previewableContentsController_;
   scoped_nsobject<PresentationModeController> presentationModeController_;
@@ -93,11 +97,15 @@ class WebContents;
   CGFloat windowTopGrowth_;
   CGFloat windowBottomGrowth_;
 
+  CGFloat windowLeftGrowth_;
+  CGFloat windowRightGrowth_;
+
   // YES only if we're shrinking the window from an apparent zoomed state (which
   // we'll only do if we grew it to the zoomed state); needed since we'll then
   // restrict the amount of shrinking by the amounts specified above. Reset to
   // NO on growth.
   BOOL isShrinkingFromZoomed_;
+  BOOL isShrinkingWFromZoomed_;
 
   // The raw accumulated zoom value and the actual zoom increments made for an
   // an in-progress pinch gesture.
@@ -263,6 +271,16 @@ class WebContents;
 
 // Lazily creates the download shelf in visible state if it doesn't exist yet.
 - (DownloadShelfController*)downloadShelf;
+
+- (BOOL)isChatbarVisible;
+
+- (FacebookChatbarController*)facebookChatbar;
+
+- (BOOL)isFriendsSidebarVisible;
+
+- (void)setFriendsSidebarVisible:(BOOL)visible;
+
+- (FacebookSidebarController*)friendsSidebar;
 
 // Retains the given FindBarCocoaController and adds its view to this
 // browser window.  Must only be called once per
@@ -454,6 +472,8 @@ class WebContents;
 // function should be followed by a call to |layoutSubviews|.
 // Returns if the window height was changed.
 - (BOOL)adjustWindowHeightBy:(CGFloat)deltaH;
+
+- (void)adjustWindowWidthBy:(CGFloat)deltaW;
 
 // Return an autoreleased NSWindow suitable for fullscreen use.
 - (NSWindow*)createFullscreenWindow;

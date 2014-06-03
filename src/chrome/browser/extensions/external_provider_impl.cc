@@ -379,6 +379,19 @@ void ExternalProviderImpl::CreateExternalProviders(
               Extension::EXTERNAL_PREF_DOWNLOAD,
               Extension::NO_FLAGS)));
 #endif
+
+#if defined (OS_MACOSX)
+  provider_list->push_back(
+      linked_ptr<ExternalProviderInterface>(
+          new ExternalProviderImpl(
+              service,
+              new ExternalPrefLoader(chrome::DIR_DEPRECATED_EXTERNAL_EXTENSIONS,
+                                     ExternalPrefLoader::NONE),
+              Extension::EXTERNAL_PREF,
+              Extension::EXTERNAL_PREF_DOWNLOAD,
+              Extension::NO_FLAGS)));
+#endif
+
 #if defined(OS_WIN)
   provider_list->push_back(
       linked_ptr<ExternalProviderInterface>(

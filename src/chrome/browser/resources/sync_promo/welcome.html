@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+// BitPop browser with features like Facebook chat and uncensored browsing. 
+// Copyright (C) 2014 BitPop AS
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html class="no-js" i18n-values="dir:textdirection">
+<head>
+<!-- Meta Tags -->
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+
+  <meta charset="utf-8">
+  <title i18n-content="promoPageTitle"></title>
+  <script src="chrome://resources/js/load_time_data.js"></script>
+  <script src="chrome://resources/js/cr.js"></script>
+  <script src="chrome://resources/js/util.js"></script>
+  <script src="chrome://resources/js/cr/event_target.js"></script>
+  <script src="../strings.js"></script>
+  <script src="sync_promo.js"></script>
+  <link rel="stylesheet" href="../shared/css/throbber.css">
+  <link rel="stylesheet" href="../shared/css/widgets.css">
+  <link rel="stylesheet" href="../sync_setup_overlay.css">
+  <link rel="stylesheet" href="sync_promo.css">
+  <link rel="stylesheet" href="main.css">
+ </head>
+<body>
+
+<div id="wrapper">
+  <div class="container">
+
+    <div class="contentwrap">
+
+    <div class="contentwrap2">
+
+      <h1 class="title"><span class="msg1">Welcome</span> <i class="logo"></i> <span class="msg2">surfer!</span></h1>
+
+      <div class="bubbles">
+
+        <div class="bubble bubble-description">
+          <h2>Log in<br />to <strong>BitPop</strong></h2>
+          <p>on all your machines.</p>
+          <p>Bookmarks and <br />settings will<br />follow you.</p>
+        </div>
+
+        <div class="bubble bubble-login">
+          <p>If you want to</p>
+          <div><a id="facebooklogin" href="https://sync.bitpop.com/login/facebook/">Log in with Facebook</a></div>
+
+          <p>Don't like Facebook?<br />We got you</p>
+          <div><a id="bitpoplogin" class="button" href="https://sync.bitpop.com/accounts/login/">Log in with BitPop</a></div>
+        </div>
+        <!-- / bubble bubble-login -->
+
+      </div>
+      <!-- / bubbles -->
+
+    </div>
+    <!-- / contentwrap2 -->
+
+    </div>
+    <!-- / contentwrap -->
+
+  </div>
+  <!-- / container -->
+</div>
+<!-- / wrapper -->
+<div class="sync_setup_wrap" hidden>
+  <div id="sync-promo">
+    <div id="sync-promo-contents">
+      <include src="../sync_setup_overlay.html" />
+    </div>
+  </div>
+</div>
+</body>
+<script src="chrome://resources/js/i18n_template2.js"></script>
+</html>

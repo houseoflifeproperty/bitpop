@@ -510,16 +510,13 @@ void SigninManager::OnGetUserInfoSuccess(const UserInfoMap& data) {
   DisableOneClickSignIn(profile_);  // Don't ever offer again.
 
   TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
+  last_result_.sid = "1";
+  last_result_.lsid = "2";
   token_service->UpdateCredentials(last_result_);
   DCHECK(token_service->AreCredentialsValid());
+  /*
   token_service->StartFetchingTokens();
-
-  // If we have oauth2 tokens, tell token service about them so it does not
-  // need to fetch them again.
-  if (!temp_oauth_login_tokens_.refresh_token.empty()) {
-    token_service->UpdateCredentialsWithOAuth2(temp_oauth_login_tokens_);
-    temp_oauth_login_tokens_ = ClientOAuthResult();
-  }
+  */
 }
 
 void SigninManager::OnGetUserInfoFailure(const GoogleServiceAuthError& error) {

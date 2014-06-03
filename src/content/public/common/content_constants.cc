@@ -23,8 +23,8 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 const wchar_t kBrowserAppName[] = L"Chrome";
 const char    kStatsFilename[] = "ChromeStats2";
 #else
-const wchar_t kBrowserAppName[] = L"Chromium";
-const char    kStatsFilename[] = "ChromiumStats2";
+const wchar_t kBrowserAppName[] = L"BitPop";
+const char    kStatsFilename[] = "BitPopStats2";
 #endif
 
 const int kStatsMaxThreads = 32;

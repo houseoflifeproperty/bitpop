@@ -31,6 +31,8 @@ SRC_APP_PATH="${BUILT_PRODUCTS_DIR}/${APP_NAME}.app"
 VOL_NAME="${APP_NAME}"
 DST_DMG_PATH="${BUILT_PRODUCTS_DIR}/${DMG_NAME}.dmg"
 
+BITPOP_DMG_RESOURCES_PATH="${SRCROOT}/installer/mac/resources"
+
 # Call the real working
 "${PKG_DMG}" --source /var/empty \
              --target "${DST_DMG_PATH}" \
@@ -38,4 +40,7 @@ DST_DMG_PATH="${BUILT_PRODUCTS_DIR}/${DMG_NAME}.dmg"
              --verbosity 0 \
              --volname "${VOL_NAME}" \
              --tempdir "${TEMP_DIR}" \
-             --copy "${SRC_APP_PATH}/:/${APP_NAME}.app/"
+             --copy "${SRC_APP_PATH}/:/${APP_NAME}.app/" \
+             --copy "${BITPOP_DMG_RESOURCES_PATH}/DS_Store:/.DS_Store" \
+             --copy "${BITPOP_DMG_RESOURCES_PATH}/background/:/.background/" \
+             --symlink "/Applications: "

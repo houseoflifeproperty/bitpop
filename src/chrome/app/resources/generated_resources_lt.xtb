@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="lt">
 <translation id="6879617193011158416">Perjungti žymių juostą</translation>
@@ -65,7 +65,7 @@ Ei! Kitą kartą gali būti naudingas inkognito režimas (<ph name="SHORTCUT_KEY
 <translation id="4940047036413029306">Kabutė</translation>
 <translation id="1497897566809397301">Leisti nustatyti vietinius duomenis (rekomenduojama)</translation>
 <translation id="3275778913554317645">Atidaryti kaip langą</translation>
-<translation id="4553117311324416101">„Google“ nustatė, kad, jei tęsite, kompiuteryje gali būti įdiegta kenkėjiška programinė įranga. Jei anksčiau lankėtės šioje svetainėje arba ja pasitikite, gali būti, kad jai neseniai pakenkė programišius. Neturėtumėte tęsti ir, galbūt, turėtumėte rytoj pabandyti dar kartą arba apsilankyti kitoje svetainėje.</translation>
+<translation id="8198393002783366468">„BitPop“ nustatė, kad, jei tęsite, kompiuteryje gali būti įdiegta kenkėjiška programinė įranga. Jei anksčiau lankėtės šioje svetainėje arba ja pasitikite, gali būti, kad jai neseniai pakenkė programišius. Neturėtumėte tęsti ir, galbūt, turėtumėte rytoj pabandyti dar kartą arba apsilankyti kitoje svetainėje.</translation>
 <translation id="8867568208303837180">Siunčiama...</translation>
 <translation id="509988127256758334">Ką rasti:</translation>
 <translation id="1420684932347524586">Oi! Nepavyko sukurti atsitiktinio RSA privačiojo rakto.</translation>
@@ -227,7 +227,7 @@ Ei! Kitą kartą gali būti naudingas inkognito režimas (<ph name="SHORTCUT_KEY
 <translation id="1818606096021558659">Puslapis</translation>
 <translation id="1549045574060481141">Patvirtinti atsisiuntimą</translation>
 <translation id="5388588172257446328">Naudotojo vardas:</translation>
-<translation id="1657406563541664238">Padėkite tobulinti „<ph name="PRODUCT_NAME"/>“ automatiškai siųsdami „Google“ naudojimo statistiką ir trikčių ataskaitas</translation>
+<translation id="5757566435961687655">Padėkite tobulinti „<ph name="PRODUCT_NAME"/>“ automatiškai siųsdami „House of Life“ naudojimo statistiką ir trikčių ataskaitas</translation>
 <translation id="7982789257301363584">Tinklas</translation>
 <translation id="2271281383664374369">Plėtinių užklausų pateikimas šiuo URL laikinai sustabdytas.</translation>
 <translation id="8528962588711550376">Prisijungiama.</translation>
@@ -243,7 +243,7 @@ Ei! Kitą kartą gali būti naudingas inkognito režimas (<ph name="SHORTCUT_KEY
 <translation id="1776883657531386793"><ph name="OID"/>: <ph name="INFO"/></translation>
 <translation id="1510030919967934016">Šis puslapis buvo užblokuotas, kad nebūtų galima stebėti jūsų vietovės.</translation>
 <translation id="8848519885565996859">Naudotojo nustatytas URL nuorodos rėmelis</translation>
-<translation id="4640525840053037973">Prisijunkite naudodami „Google“ paskyrą</translation>
+<translation id="4550196943338771146">Prisijunkite naudodami „BitPop“ paskyrą</translation>
 <translation id="5255315797444241226">Įvesta slaptafrazė neteisinga.</translation>
 <translation id="762917759028004464">Šiuo metu pagrindinė naršyklė „<ph name="BROWSER_NAME"/>“</translation>
 <translation id="9213479837033539041">liko <ph name="NUMBER_MANY"/> sek.</translation>
@@ -293,8 +293,8 @@ Ei! Kitą kartą gali būti naudingas inkognito režimas (<ph name="SHORTCUT_KEY
           ir spustelėkite
           <ph name="BEGIN_BOLD"/>Gerai<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Pridėti paieškos sistemą</translation>
-<translation id="4043223219875055035">Prisijunkite naudodami „Google“ paskyrą, jei norite leisti programoms sinchronizuoti nustatymus ir teikti priskirtas paslaugas.</translation>
-<translation id="6868050610674841964">Prisijungus duomenys bus sinchronizuojami su „Google“ paskyra, kad galėtumėte bet kokiu įrenginiu pasiekti žymes, istoriją ir kitus nustatymus.</translation>
+<translation id="7333287746989217896">Prisijunkite naudodami „BitPop“ paskyrą, jei norite leisti programoms sinchronizuoti nustatymus ir teikti priskirtas paslaugas.</translation>
+<translation id="5804885986789001150">Prisijungus duomenys bus sinchronizuojami su „Facebook/BitPop“ paskyra, kad galėtumėte bet kokiu įrenginiu pasiekti žymes, istoriją ir kitus nustatymus.</translation>
 <translation id="5498951625591520696">Nepavyksta pasiekti serverio.</translation>
 <translation id="1621207256975573490">Išsaugoti &amp;rėmelį kaip...</translation>
 <translation id="4681260323810445443">Jums neleidžiama pasiekti tinklalapio šiuo adresu: <ph name="URL"/>. Gali reikėti prisijungti.</translation>
@@ -417,7 +417,7 @@ Ei! Kitą kartą gali būti naudingas inkognito režimas (<ph name="SHORTCUT_KEY
 <translation id="8194465509832052438">Konfigūruoti komandas</translation>
 <translation id="4422347585044846479">Redaguoti žymą šitam puslapiui</translation>
 <translation id="2452539774207938933">Perjungti naudotoją: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">„Google Chrome“ gali teikti išmanesnę rašybos tikrinimo funkciją, siųsdama tai, ką įvedate naršyklėje, „Google“ serveriams ir leisdama naudoti tą pačią rašybos tikrinimo technologiją, kuri naudojama „Google“ paieškoje.</translation>
+<translation id="8810891758424955762">„BitPop“ gali teikti išmanesnę rašybos tikrinimo funkciją, siųsdama tai, ką įvedate naršyklėje, „Google“ serveriams ir leisdama naudoti tą pačią rašybos tikrinimo technologiją, kuri naudojama „Google“ paieškoje.</translation>
 <translation id="1880905663253319515">Ištrinti „<ph name="CERTIFICATE_NAME"/>“ sertifikatą?</translation>
 <translation id="8546306075665861288">Vaizdo talpykla</translation>
 <translation id="1168100932582989117">„Google“ pavadinimų serveriai</translation>
@@ -506,7 +506,6 @@ eksperimento ID: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="1046059554679513793">Oi! Šis vardas jau naudojamas!</translation>
 <translation id="3887847548716051874">Visada leisti šiai svetainei naudoti šį mikrofoną ir šią kamerą</translation>
 <translation id="4497097279402334319">Nepavyko prisijungti prie tinklo.</translation>
-<translation id="7342729285348293164">Jei norite žiniatinklyje išsaugoti suasmenintas naršyklės funkcijas ir pasiekti jas iš „<ph name="PRODUCT_NAME"/>“ bet kuriuo kompiuteriu, prisijunkite prie „<ph name="PRODUCT_NAME"/>“ naudodami „Google“ paskyrą. Be to, automatiškai prisijungsite prie mėgstamiausių „Google“ paslaugų.</translation>
 <translation id="2542049655219295786">„Google“ lentelė</translation>
 <translation id="3899879303189199559">Neprijungta daugiau nei metus</translation>
 <translation id="5303618139271450299">Šis tinklalapis nerastas</translation>
@@ -653,7 +652,6 @@ eksperimento ID: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="773426152488311044">Šiuo metu esate vienintelis (-ė) „<ph name="PRODUCT_NAME"/>“ naudotojas (-a).</translation>
 <translation id="2042078858148122628">Nepavyksta rasti <ph name="HOST_NAME"/> esančio serverio, nes nepavyko atlikti DNS peržiūros. DNS – tai žiniatinklio paslauga, kurią naudojant svetainės pavadinimas verčiamas į jos internetinį adresą. Ši klaida dažniausiai įvyksta, kai nėra interneto ryšio arba kai tinklas netinkamai sukonfigūruotas. Be to, ji gali įvykti dėl neatsakančio DNS serverio ar užkardos, trukdančios „<ph name="PRODUCT_NAME"/>“ pasiekti tinklą.</translation>
 <translation id="2159087636560291862">Šiuo atveju sertifikato nepatvirtino trečioji šalis, kuria pasitiki jūsų kompiuteris. Bet kas gali sukurti sertifikatą, kuriame nurodoma, kad tai yra bet kuri pasirinkta svetainė, todėl būtina, kad jį patvirtintų trečioji šalis. Be patvirtinimo visa sertifikato informacija yra nereikšminga. Todėl neįmanoma patvirtinti, kad jūs bendraujate su <ph name="DOMAIN"/>, o ne su užpuoliku, kuris sukūrė savo sertifikatą, nurodantį, kad yra <ph name="DOMAIN2"/>. Neturėtumėte toliau tęsti.</translation>
-<translation id="58625595078799656">„<ph name="PRODUCT_NAME"/>“ reikalauja, kad šifruotumėte duomenis naudodami „Google“ slaptažodį arba savo slaptafrazę.</translation>
 <translation id="8017335670460187064">„<ph name="LABEL"/>“</translation>
 <translation id="6840184929775541289">Nėra sertifikavimo institucija</translation>
 <translation id="6099520380851856040">Įvyko <ph name="CRASH_TIME"/></translation>
@@ -673,7 +671,7 @@ eksperimento ID: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="9121814364785106365">Atidaryti kaip susegtą skirtuką</translation>
 <translation id="6292030868006209076">Tamilų k. įvesties metodas („itrans“)</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_DOMAIN"/> esantis papildinys „<ph name="PEPPER_PLUGIN_NAME"/>“ nori pasiekti jūsų kompiuterį.</translation>
-<translation id="2128450505147514836">Pridėtas failas įkeliamas į „Google“ serverius derinti.&lt;br&gt;
+<translation id="7411702401114360503">Pridėtas failas įkeliamas į „BitPop“ serverius derinti.&lt;br&gt;
         Pastaba: prie atsiliepimų ataskaitos galite pridėti vieną failą (ne didesnį nei 3 MB)</translation>
 <translation id="3435896845095436175">Įgalinti</translation>
 <translation id="5849294688757445020">GPU komponavimas visuose puslapiuose</translation>
@@ -858,7 +856,7 @@ eksperimento ID: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="5120247199412907247">Išplėstinė konfigūracija</translation>
 <translation id="567881659373499783"><ph name="PRODUCT_VERSION"/> versija</translation>
 <translation id="1368352873613152012">Saugaus naršymo privatumo politika</translation>
-<translation id="5105859138906591953">Jei norite į „Chrome“ importuoti įrankių juostos žymes, privalote būti prisijungę prie „Google“ paskyros. Prisijunkite ir dar kartą pabandykite importuoti.</translation>
+<translation id="5189894578581316474">Jei norite į „BitPop“ importuoti įrankių juostos žymes, privalote būti prisijungę prie „Google“ paskyros. Prisijunkite ir dar kartą pabandykite importuoti.</translation>
 <translation id="8899851313684471736">Atidaryti nuorodą naujame &amp;lange</translation>
 <translation id="4110342520124362335"><ph name="DOMAIN"/> slapukai užblokuoti.</translation>
 <translation id="2198315389084035571">Supaprastinta kinų k.</translation>
@@ -927,7 +925,6 @@ eksperimento ID: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="1049376040497900836">Atvejai, kai buvo pakeista „<ph name="SHORT_PRODUCT_NAME"/>“ versija</translation>
 <translation id="1422780722984745882">Gautos kelios vietos antraštės. Tai neleidžiama siekiant
         apsisaugoti nuo HTTP atsako skaidymo išpuolių.</translation>
-<translation id="7787129790495067395">Šiuo metu naudojate slaptafrazę. Jei ją pamiršote, galite iš naujo nustatyti sinchronizavimą, kad išvalytumėte duomenis iš „Google“ serverių, naudodami „Google“ prietaisų skydelį.</translation>
 <translation id="721997939566478439">Gerai, puiku</translation>
 <translation id="6612611129072884913">Prisegti šį puslapį prie pradžios ekrano...</translation>
 <translation id="3380365263193509176">Nežinoma klaida</translation>
@@ -1053,7 +1050,7 @@ likęs akumuliatoriaus laikas</translation>
 <translation id="2955913368246107853">Uždaryti paieškos juostą</translation>
 <translation id="8864170386249720785">Mobiliojo įrenginio SSL nustatymai:</translation>
 <translation id="2560788951337264832">Liko <ph name="NUMBER_ZERO"/> min.</translation>
-<translation id="3914942725612686145">Dabar esate prisijungę prie „Chrome“. Atidaryti skirtukų lapai, žymės ir „Omnibox“ duomenys sinchronizuojami su „Google“ paskyra.</translation>
+<translation id="6896530527102607056">Dabar esate prisijungę prie „Chrome“. Atidaryti skirtukų lapai, žymės ir „Omnibox“ duomenys sinchronizuojami su „Facebook/BitPop“ paskyra.</translation>
 <translation id="5642508497713047">CRL pasirašantis asmuo</translation>
 <translation id="813082847718468539">Žiūrėti svetainės informaciją</translation>
 <translation id="127353061808977798">Šriftai ir koduotė</translation>
@@ -1408,7 +1405,7 @@ likęs akumuliatoriaus laikas</translation>
 <translation id="7092106376816104">Iššokančiųjų langų išimtys</translation>
 <translation id="4830475881783902092">Kliento ID:</translation>
 <translation id="4600958291864306415">generuojama...</translation>
-<translation id="8594787581355215556">Prisijungėte kaip <ph name="USER_EMAIL_ADDRESS"/>. Tvarkykite sinchronizuojamus duomenis <ph name="BEGIN_LINK"/>„Google“ informacijos suvestinėje<ph name="END_LINK"/>.</translation>
+<translation id="2669230071943955873">Prisijungėte kaip <ph name="USER_EMAIL_ADDRESS"/>. Tvarkykite sinchronizuojamus duomenis <ph name="BEGIN_LINK"/>„BitPop“ informacijos suvestinėje<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Pridėti prie pagrindinio ekrano</translation>
 <translation id="263325223718984101">„<ph name="PRODUCT_NAME"/>“ nepavyko baigti diegimo, bet ji toliau bus paleista iš disko vaizdo.</translation>
 <translation id="1952837113524940233">Įgalinti naujas tinklo dorokles</translation>
@@ -1428,7 +1425,7 @@ likęs akumuliatoriaus laikas</translation>
 <translation id="4250680216510889253">Ne</translation>
 <translation id="5109044022078737958">Austra</translation>
 <translation id="6291953229176937411">&amp;Rodyti ieškojimo priemonėje</translation>
-<translation id="8598687241883907630">Atjunkite „Google“ paskyrą...</translation>
+<translation id="3684341060830149235">Atjunkite „Facebook/BitPop“ paskyrą...</translation>
 <translation id="2556718757702023317">Jei norite išsaugoti „<ph name="FILE_NAME"/>“ neprisijungę, turite atlaisvinti papildomai <ph name="TOTAL_FILE_SIZE"/> vietos:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>atsekite failus, kurių nebenorite pasiekti neprisijungę<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>ištrinkite failus iš atsisiuntimų aplanko<ph name="MARKUP_5"/></translation>
@@ -1515,7 +1512,7 @@ Ar norite paleisti „<ph name="CONTROL_PANEL_APPLET_NAME"/>“?</translation>
 <translation id="4181898366589410653">Serverio sertifikate neaptiktas panaikinimo mechanizmas</translation>
 <translation id="1515163294334130951">Paleidimas</translation>
 <translation id="6914291514448387591">Norint paleisti „<ph name="PLUGIN_NAME"/>“ reikalingas jūsų leidimas.</translation>
-<translation id="1123316951456119629">Jei atjungsite „Google“ paskyrą nuo „<ph name="PRODUCT_NAME"/>“, šio kompiuterio duomenų pakeitimai daugiau nebus sinchronizuojami su „Google“ paskyra. „Google“ paskyroje išsaugoti duomenys liks joje, kol juos pašalinsite naudodami <ph name="BEGIN_LINK"/>„Google“ informacijos suvestinę<ph name="END_LINK"/>.</translation>
+<translation id="3144050057163527741">Jei atjungsite „BitPop“ paskyrą nuo „<ph name="PRODUCT_NAME"/>“, šio kompiuterio duomenų pakeitimai daugiau nebus sinchronizuojami su „Google“ paskyra. „Google“ paskyroje išsaugoti duomenys liks joje, kol juos pašalinsite naudodami <ph name="BEGIN_LINK"/>„Google“ informacijos suvestinę<ph name="END_LINK"/>.</translation>
 <translation id="8705331520020532516">Serijos numeris</translation>
 <translation id="1665770420914915777">Naudotis naujo skirtuko puslapiu</translation>
 <translation id="5456409301717116725">Šiame plėtinyje yra rakto failas „<ph name="KEY_PATH"/>“. Neturėtumėte to daryti.</translation>
@@ -1597,7 +1594,7 @@ Ar norite paleisti „<ph name="CONTROL_PANEL_APPLET_NAME"/>“?</translation>
 <translation id="6589706261477377614">Padidinti klaviatūros ryškumą</translation>
 <translation id="1367951781824006909">Pasirinkti failą</translation>
 <translation id="8311778656528046050">Ar tikrai norite iš naujo įkelti šį puslapį?</translation>
-<translation id="1425127764082410430">&amp;Ieškoti <ph name="SEARCH_ENGINE"/> (ko) „<ph name="SEARCH_TERMS"/>&quot;</translation>
+<translation id="1425127764082410430">&amp;Ieškoti <ph name="SEARCH_ENGINE"/> (ko) „<ph name="SEARCH_TERMS"/>"</translation>
 <translation id="684265517037058883">(dar negalioja)</translation>
 <translation id="2027538664690697700">Atnaujinti papildinį...</translation>
 <translation id="8075539548641175231"><ph name="TIME"/> jūsų duomenys užšifruoti naudojant sinchronizavimo slaptafrazę. Įveskite ją toliau.</translation>
@@ -1730,8 +1727,8 @@ Ar norite paleisti „<ph name="CONTROL_PANEL_APPLET_NAME"/>“?</translation>
 <translation id="7434823369735508263">JK Dvorako klaviatūra</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> dienos</translation>
 <translation id="8825366169884721447">Šiam plėtiniui keičiant tinklo užklausos antraštę „<ph name="HEADER_NAME"/>“ įvyko klaida, nes dėl pakeitimo kilo konfliktas su kitu plėtiniu („<ph name="EXTENSION_NAME"/>“).</translation>
-<translation id="5308845175611284862">Naudodami „<ph name="PRODUCT_NAME"/>“ sinchronizavimą galite lengvai bendrinti duomenis (pvz., žymes ir nustatymus) su kitais kompiuteriais.
-          Kai prisijungiate per „Google“ paskyrą, „<ph name="PRODUCT_NAME"/>“ sinchronizuoja duomenis su „Google“ ir išsaugo juos internete.</translation>
+<translation id="291445075019511713">Naudodami „<ph name="PRODUCT_NAME"/>“ sinchronizavimą galite lengvai bendrinti duomenis (pvz., žymes ir nustatymus) su kitais kompiuteriais.
+          Kai prisijungiate per „BitPop“ paskyrą, „<ph name="PRODUCT_NAME"/>“ sinchronizuoja duomenis su „BitPop“ ir išsaugo juos internete.</translation>
 <translation id="1707463636381878959">Bendrinti šį tinklą su kitais naudotojais</translation>
 <translation id="3024663005179499861">Netinkamas politikos tipas</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -1929,7 +1926,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="1601560923496285236">Taikyti</translation>
 <translation id="2390045462562521613">Pamiršti šį tinklą</translation>
 <translation id="3348038390189153836">Aptiktas pašalintinas įrenginys</translation>
-<translation id="8005540215158006229">„Chrome“ beveik paruošta.</translation>
+<translation id="3674182693516842999">„BitPop“ beveik paruošta.</translation>
 <translation id="1666788816626221136">Turite pateiktų sertifikatų, kurie netinka jokiose kitose kategorijose:</translation>
 <translation id="5698727907125761952">Oficialus atlikėjas</translation>
 <translation id="4821935166599369261">&amp;Profiliavimas įgalintas</translation>
@@ -2082,7 +2079,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="748138892655239008">Pagrindiniai sertifikato apribojimai</translation>
 <translation id="457386861538956877">Daugiau...</translation>
 <translation id="9210991923655648139">Pasiekiama scenarijaus:</translation>
-<translation id="4152177296285305182">Tik slaptafrazę turintis asmuo gali skaityti šifruotus duomenis. Slaptafrazė nesiunčiama ar nesaugoma „Google“. Jei pamiršite slaptafrazę, turėsite iš naujo nustatyti sinchronizavimą.</translation>
+<translation id="8792136381897173209">Tik slaptafrazę turintis asmuo gali skaityti šifruotus duomenis. Slaptafrazė nesiunčiama ar nesaugoma „BitPop“. Jei pamiršite slaptafrazę, turėsite iš naujo nustatyti sinchronizavimą.</translation>
 <translation id="1950295184970569138">* „Google“ profilio nuotrauka (įkeliama)</translation>
 <translation id="8063491445163840780">Suaktyvinti 4 skirtuką</translation>
 <translation id="5473544328731861874">Pašalinti ketinimą</translation>
@@ -2241,7 +2238,6 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="2563185590376525700">Varlė</translation>
 <translation id="2553340429761841190">„<ph name="PRODUCT_NAME"/>“ nepavyko prisijungti prie <ph name="NETWORK_ID"/>. Pasirinkite kitą tinklą arba bandykite dar kartą.</translation>
 <translation id="2086712242472027775">Paskyra „<ph name="PRODUCT_NAME"/>“ neveikia. Susisiekite su domeno administratoriumi arba prisijungdami naudokite įprastą „Google“ paskyrą.</translation>
-<translation id="1373074393717692190">Prisijunkite prie „<ph name="PRODUCT_NAME"/>“ per „Google“ paskyrą ir išsaugokite suasmenintas naršyklės funkcijas žiniatinklyje, kad galėtumėte jas pasiekti „<ph name="PRODUCT_NAME"/>“ bet kuriame mobiliajame įrenginyje. Be to, automatiškai prisijungsite prie mėgstamiausių „Google“ paslaugų.</translation>
 <translation id="7222232353993864120">El. pašto adresas</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="7175353351958621980">Įkelta iš:</translation>
@@ -2496,7 +2492,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="1752977958630076881">Vietinius duomenis saugoti, tik kol atidaryta naršyklė</translation>
 <translation id="7853202427316060426">Veikla</translation>
 <translation id="8550022383519221471">Sinchronizavimo paslauga negalima jūsų domenui.</translation>
-<translation id="1436238710092600782">Sukurti „Google“ paskyrą</translation>
+<translation id="8612897762498195031">Sukurti „BitPop“ paskyrą</translation>
 <translation id="3355823806454867987">Pakeisti įgaliotojo serverio nustatymus...</translation>
 <translation id="2882324896611949356">Įgalina „Google“ kontaktų atsisiuntimą ir jų pateikimą programų sąraše.</translation>
 <translation id="4780374166989101364">Įgalinamos bandomųjų plėtinių API. Atminkite, kad į plėtinių galeriją neleidžiama įkelti plėtinių, kuriems naudojamos bandomosios API.</translation>
@@ -2590,7 +2586,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="8314066201485587418">Išvalyti slapukus ir kitus svetainės duomenis, kai uždarau naršyklę</translation>
 <translation id="4094105377635924481">Pridėti grupavimą prie skirtukų kontekstinio meniu</translation>
 <translation id="765676359832457558">Slėpti išplėstinius nustatymus...</translation>
-<translation id="7626032353295482388">Sveiki, tai „Chrome“</translation>
+<translation id="185658551912723674">Sveiki, tai „BitPop“</translation>
 <translation id="8655295600908251630">Kanalas</translation>
 <translation id="8250690786522693009">Lotynų</translation>
 <translation id="2119721408814495896">„<ph name="CLOUD_PRINT_NAME"/>“ jungiamajam elementui reikia įdiegti „Microsoft XML Paper Specification Essentials Pack“.</translation>
@@ -2981,7 +2977,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="9072684888578654899">&lt;p&gt;
           Čia bus rodomi „Chrome“ skirtukai, kurių lapus atidarėte kituose įrenginiuose.
           &lt;/p&gt;
-          &lt;a href=&quot;#enablesync&quot;&gt;
+          &lt;a href="#enablesync"&gt;
           Įgalinti sinchronizavimą.
           &lt;/p&gt;</translation>
 <translation id="889901481107108152">Deja, šis eksperimentas negalimas platformoje.</translation>
@@ -3131,7 +3127,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="6007237601604674381">Nepavyko perkelti. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Pakuojant nepavyko sukurti laikino talpiojo („zip“) failo.</translation>
 <translation id="1881456419707551346">Išsami ryšio informacija</translation>
-<translation id="1064912851688322329">Atjunkite „Google“ paskyrą</translation>
+<translation id="1175819364738375266">Atjunkite „Facebook/BitPop“ paskyrą</translation>
 <translation id="1294298200424241932">Redaguoti patikimumo nustatymus:</translation>
 <translation id="1407135791313364759">Atidaryti viską</translation>
 <translation id="1434928358870966081">Neleisti paspartintų 2D matomųjų tinklalapių sričių</translation>
@@ -3336,7 +3332,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Turi būti galiojantis URL</translation>
 <translation id="3464726836683998962">Neleisti duomenų mobiliesiems tarptinklinio ryšio</translation>
-<translation id="8986494364107987395">Automatiškai siųsti naudojimo statistiką ir strigčių ataskaitas „Google“</translation>
+<translation id="7133428520955276418">Automatiškai siųsti naudojimo statistiką ir strigčių ataskaitas „House of Life“</translation>
 <translation id="7070714457904110559">Įgalinami bandomieji geografinės vietos funkcijos plėtiniai. Įtraukiamas operacinės sistemos vietos API naudojimas (kur galima) ir papildomų vietinio tinklo konfigūravimo duomenų siuntimas „Google“ vietos paslaugai, siekiant tiksliau nustatyti poziciją.</translation>
 <translation id="6701535245008341853">Profilio gauti nepavyko.</translation>
 <translation id="8303655282093186569">Pinjino k. įvesties nustatymai</translation>
@@ -3372,7 +3368,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="4762295713053835808">Asmeniniai niekai</translation>
 <translation id="3445092916808119474">Padaryti pagrindinį</translation>
 <translation id="6374100501221763867">Neleisti aparatine įranga spartinamo vaizdo įrašų iškodavimo.</translation>
-<translation id="7477347901712410606">Jei pamiršote slaptafrazę, iš naujo nustatykite sinchronizavimą naudodami <ph name="BEGIN_LINK"/>„Google“ informacijos suvestinę<ph name="END_LINK"/>.</translation>
+<translation id="1257410854647617646">Jei pamiršote slaptafrazę, iš naujo nustatykite sinchronizavimą naudodami <ph name="BEGIN_LINK"/>„BitPop“ informacijos suvestinę<ph name="END_LINK"/>.</translation>
 <translation id="3085235303151103497">Įgalinti paketinių programų derinimą.</translation>
 <translation id="2645575947416143543">Jei dirbate įmonėje, kuri pati generuoja savo sertifikatus, ir bandote prisijungti prie vidinės įmonės svetainės naudodami tokį sertifikatą, galite šią problemą išspręsti saugiai. Galite importuoti savo įmonės sertifikatą kaip „pagrindinį sertifikatą“, tada įmonės išduoti ar patikrinti sertifikatai bus patikimi ir kitą kartą bandydami prisijungti prie vidinės svetainės nematysite šios klaidos. Jei reikia pagalbos pridedant naują pagrindinį sertifikatą kompiuteryje, kreipkitės į įmonės pagalbos darbuotojus.</translation>
 <translation id="1056898198331236512">Įspėjimas</translation>
@@ -3572,7 +3568,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="4971925105143343452">Dalinis</translation>
 <translation id="3454157711543303649">Aktyvinimas baigtas</translation>
 <translation id="884923133447025588">Nerasta atšaukimo mechanizmo.</translation>
-<translation id="7801746894267596941">Tik slaptafrazę turintis asmuo gali skaityti šifruotus duomenis. Slaptafrazė nesiunčiama ar nesaugoma „Google“. Jei pamiršite slaptafrazę, turėsite</translation>
+<translation id="2077681924461579449">Tik slaptafrazę turintis asmuo gali skaityti šifruotus duomenis. Slaptafrazė nesiunčiama ar nesaugoma „BitPop“. Jei pamiršite slaptafrazę, turėsite</translation>
 <translation id="5406835729608468430">Peržiūrėti naudojant…</translation>
 <translation id="291886813706048071">Naudodami „<ph name="SEARCH_ENGINE"/>“, iš čia galite ieškoti</translation>
 <translation id="556042886152191864">Mygtukas</translation>
@@ -3754,7 +3750,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="8948393169621400698">Visada leisti papildinius <ph name="HOST"/></translation>
 <translation id="6527303717912515753">Bendrinti</translation>
 <translation id="4285498937028063278">Atsegti</translation>
-<translation id="2588322182880276190">„Chrome“ logotipas</translation>
+<translation id="193954205383164322">„BitPop“ logotipas</translation>
 <translation id="7893008570150657497">Pasiekti nuotraukas, muziką ir kitą mediją iš kompiuterio</translation>
 <translation id="5449624072515809082">Įjungiamas automatinis teksto taisymas įvedant. Sinchroninis rašybos tikrinimas nesuderinamas su šia funkcija.</translation>
 <translation id="8291808604460602261">Leisti „Web Intents“ įgalinti mane prisijungti prie programų.</translation>
@@ -4100,7 +4096,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="3021678814754966447">&amp;Žiūrėti rėmelio šaltinį</translation>
 <translation id="8601206103050338563">TLS WWW kliento tapatybės nustatymas</translation>
 <translation id="1692799361700686467">Leidžiami slapukai iš kelių svetainių.</translation>
-<translation id="5187295959347858724">Dabar esate prisijungę prie „<ph name="SHORT_PRODUCT_NAME"/>“. Žymės, istorija ir kiti nustatymai sinchronizuojami su „Google“ paskyra.</translation>
+<translation id="6928105098560478094">Dabar esate prisijungę prie „<ph name="SHORT_PRODUCT_NAME"/>“. Žymės, istorija ir kiti nustatymai sinchronizuojami su „BitPop“ paskyra.</translation>
 <translation id="7381706763856392587">„<ph name="FILENAME"/>“ ištrintas</translation>
 <translation id="529232389703829405"><ph name="DATE"/> įsigijote <ph name="DATA_AMOUNT"/> duomenų</translation>
 <translation id="7419106976560586862">Profilio kelias</translation>
@@ -4168,7 +4164,7 @@ Viešoji skaičiaus eilė (bitų: <ph name="PUBLIC_EXPONENT_NUM_BITS"/>):
 <translation id="6692173217867674490">Netinkama slaptafrazė</translation>
 <translation id="5550431144454300634">Automatiškai taisyti įvestį</translation>
 <translation id="3308006649705061278">Organizacinis vienetas (angl. „Organizational Unit“) (OU)</translation>
-<translation id="8912362522468806198">Google Paskyra</translation>
+<translation id="9034203691147880734">BitPop Paskyra</translation>
 <translation id="4839847978919684242">Pasirinkta elementų: <ph name="SELCTED_FILES_COUNT"/></translation>
 <translation id="4443536555189480885">&amp;Pagalba</translation>
 <translation id="6993309531105463648">Neleisti automatinio vieno ar dviejų naršyklės / programos langų padėties nustatymo.</translation>
@@ -4545,7 +4541,7 @@ Jei norite toliau naršyti, paspauskite bet kurį klavišą.</translation>
 <translation id="1177437665183591855">Nežinoma serverio sertifikato klaida</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> nori naudoti jūsų kamerą ir mikrofoną.</translation>
 <translation id="8467473010914675605">Įvesties korėjiečių k. metodas</translation>
-<translation id="8102535138653976669">„<ph name="PRODUCT_NAME"/>“ saugiai sinchronizuoja duomenis su „Google“ paskyra. Viską sinchronizuokite arba tinkinkite sinchronizuojamų duomenų tipus ir šifruotės nustatymus.</translation>
+<translation id="7938022885346429483">„<ph name="PRODUCT_NAME"/>“ saugiai sinchronizuoja duomenis su „BitPop“ paskyra. Viską sinchronizuokite arba tinkinkite sinchronizuojamų duomenų tipus ir šifruotės nustatymus.</translation>
 <translation id="2639739919103226564">Būsena:</translation>
 <translation id="824543159844843373">Aktyvinti 3 paleidimo priemonės elementą</translation>
 <translation id="6923900367903210484">Autorių teisės</translation>
@@ -4573,7 +4569,7 @@ Jei norite toliau naršyti, paspauskite bet kurį klavišą.</translation>
 <translation id="2101797668776986011">Pepper 3D</translation>
 <translation id="1581962803218266616">Rodyti ieškojimo priemonėje</translation>
 <translation id="9100765901046053179">Išplėstiniai nustatymai</translation>
-<translation id="203168018648013061">Sinchronizavimo klaida: nustatykite sinchronizavimą iš naujo per „Google“ informacijos suvestinę.</translation>
+<translation id="2936690273131526650">Sinchronizavimo klaida: nustatykite sinchronizavimą iš naujo per „BitPop“ informacijos suvestinę.</translation>
 <translation id="1405126334425076373">Pelės žymeklis</translation>
 <translation id="6671493224572088110">Žiūrėti „<ph name="VIDEO_NAME"/>“</translation>
 <translation id="6096326118418049043">X.500 vardas</translation>
@@ -4694,7 +4690,7 @@ Jei norite toliau naršyti, paspauskite bet kurį klavišą.</translation>
 <translation id="2050339315714019657">Stačias</translation>
 <translation id="6978839998405419496"><ph name="NUMBER_ZERO"/> days ago</translation>
 <translation id="8273027367978594412">Kai įgalinta, naudotojas svečias bus pasiekiamas kompiuteriui skirtoje „Chrome“.</translation>
-<translation id="8188199528179562676">Jei atsijungsite „Google“ paskyrą nuo „<ph name="PRODUCT_NAME"/>“, šio mobiliojo įrenginio duomenų pakeitimai daugiau nebus sinchronizuojami su „Google“ paskyra. „Google“ paskyroje išsaugoti duomenys liks joje, kol juos pašalinsite naudodami <ph name="BEGIN_LINK"/>„Google“ informacijos suvestinę<ph name="END_LINK"/>.</translation>
+<translation id="3972854587947107012">Jei atsijungsite „BitPop“ paskyrą nuo „<ph name="PRODUCT_NAME"/>“, šio mobiliojo įrenginio duomenų pakeitimai daugiau nebus sinchronizuojami su „Google“ paskyra. „Google“ paskyroje išsaugoti duomenys liks joje, kol juos pašalinsite naudodami <ph name="BEGIN_LINK"/>„Google“ informacijos suvestinę<ph name="END_LINK"/>.</translation>
 <translation id="8261490674758214762">Leidžiama:</translation>
 <translation id="5112577000029535889">&amp;Kūrėjo įrankiai</translation>
 <translation id="2301382460326681002">Plėtinio šakninis katalogas neteisingas.</translation>

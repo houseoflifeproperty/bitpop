@@ -33,6 +33,14 @@ without changes to the corresponding grd file. -->
                file="shared/images/trash.png" type="BINDATA" />
       <include name="IDR_SHARED_IMAGES_CLOUDS"
                file="shared/images/clouds.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_WELCOME_BODY2"
+               file="shared/images/body2.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_WELCOME_BG_BUBBLE"
+               file="shared/images/bg_bubble.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_WELCOME_LOGO"
+               file="shared/images/logo.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_WELCOME_BTN_FBLOGIN"
+               file="shared/images/btn_fblogin.png" type="BINDATA" />
     </includes>
     <structures>
       <structure name="IDR_SHARED_CSS_ABOUT"

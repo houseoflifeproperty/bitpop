@@ -21,7 +21,7 @@ namespace app_host {
 namespace {
 
 // TODO(huangs) Refactor the constants: http://crbug.com/148538
-const wchar_t kGoogleRegClientsKey[] = L"Software\\Google\\Update\\Clients\\";
+const wchar_t kGoogleRegClientsKey[] = L"Software\\HouseOfLife\\BitPopUpdate\\Clients\\";
 
 // Copied from util_constants.cc.
 const char kMultiInstall[] = "multi-install";
@@ -32,10 +32,10 @@ const char kVerboseLogging[] = "verbose-logging";
 const wchar_t kRegVersionField[] = L"pv";
 
 // Copied from chrome_appid.cc.
-const wchar_t kBinariesAppGuid[] = L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}";
+const wchar_t kBinariesAppGuid[] = L"{B2A30819-3DA9-44A4-93AC-E02724D3BFA0}";
 
 // Copied from google_chrome_distribution.cc.
-const wchar_t kBrowserAppGuid[] = L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+const wchar_t kBrowserAppGuid[] = L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 
 // Fetches the version of the App Host, directly from the image's version
 // resource.

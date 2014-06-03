@@ -1,0 +1,212 @@
+<html>
+	<head>
+		<title>Dropdown List of Most Visited Links Options</title>
+		<link href="styles.css" rel="stylesheet" type="text/css">
+		<style>
+			body{background-color:#ebeff9;font-family:arial,sans-serif;font-size:12px;}
+			#form_container {width:410px;margin:0 auto;padding:10px 30px;background:#fff;border-color:#b5c7de;border-style:solid;border-width:4px;-webkit-border-radius:12px;}
+			h2 {padding:0;margin:0 0 3px 0;text-align:center;font-size:15px;}
+			fieldset {border:1px dashed #b5c7de;margin-bottom:5px;}
+			#form_status {background-color:#fff1a8;padding:2px 20px 2px 5px;display:none;}
+			select {font-size:12px;}
+
+			.links, .links_inline {margin-left:25px;}
+			.links_inline .subtitle{padding:0;}
+			.list_radio {float:left;}
+			.spacer {border-bottom:1px solid #f1f8ff;margin-left:25px;}
+			input {font-size:12px;}
+			table {font-size:12px;border-collapse: collapse;}
+			td {margin:0;padding:0;}
+			.color {border:1px solid #A9A9A9;}
+		</style>
+		<script type="text/javascript" src="js/jquery.js"></script>
+		<script type="text/javascript" src="js/options.js"></script>
+		<script type="text/javascript" src="js/jscolor/jscolor.js"></script>
+	</head>
+	<body>
+		<div id="form_container">
+			<h2>Dropdown List of Most Visited Links Options</h2>
+			<form name="options_form" id="options_form">
+				<fieldset>
+					<legend>List Style:</legend>
+
+					<input class="list_radio" type="radio" name="list_style" value="double_title_url" id="list_style_double_title_url" checked>
+					<label for="list_style_double_title_url">
+						<div class="links">
+							<div class="details">
+								<img class="icon" src="chrome://favicon/http://www.google.com/chrome/intl/en/landing_chrome.html?hl=en"/>
+								<div class="title">Google Chrome</div>
+								<div class="subtitle url">www.google.com/chrome</div>
+							</div>
+						</div>
+
+					</label>
+
+					<div class="spacer"></div>
+
+					<input class="list_radio" type="radio" name="list_style" value="double_url_title" id="list_style_double_url_title">
+					<label for="list_style_double_url_title">
+						<div class="links">
+							<div class="details">
+								<img class="icon" src="chrome://favicon/http://www.google.com/chrome/intl/en/landing_chrome.html?hl=en"/>
+								<div class="title url">www.google.com/chrome</div>
+								<div class="subtitle">Google Chrome</div>
+							</div>
+						</div>
+
+					</label>
+
+					<div class="spacer"></div>
+
+					<input class="list_radio" type="radio" name="list_style" value="inline_title_url" id="list_style_inline_title_url">
+					<label for="list_style_inline_title_url">
+						<div class="links_inline">
+							<div class="details">
+								<img class="icon" src="chrome://favicon/http://www.google.com/chrome/intl/en/landing_chrome.html?hl=en"/>
+								<div class="title">Google Chrome –</div>
+								<div class="subtitle url">www.google.com/chrome</div>
+							</div>
+						</div>
+
+					</label>
+
+					<div class="spacer"></div>
+
+					<input class="list_radio" type="radio" name="list_style" value="inline_url_title" id="list_style_inline_url_title">
+					<label for="list_style_inline_url_title">
+						<div class="links_inline">
+							<div class="details">
+								<img class="icon" src="chrome://favicon/http://www.google.com/chrome/intl/en/landing_chrome.html?hl=en"/>
+								<div class="title url">www.google.com/chrome</div>
+								<div class="subtitle">– Google Chrome</div>
+							</div>
+						</div>
+
+					</label>
+
+					<div class="spacer"></div>
+
+					<input class="list_radio" type="radio" name="list_style" value="inline_title" id="list_style_inline_title">
+					<label for="list_style_inline_title">
+						<div class="links_inline">
+							<div class="details">
+								<img class="icon" src="chrome://favicon/http://www.google.com/chrome/intl/en/landing_chrome.html?hl=en"/>
+								<div class="title" title="www.google.com/chrome">Google Chrome</div>
+							</div>
+						</div>
+
+					</label>
+
+					<div class="spacer"></div>
+
+					<input class="list_radio" type="radio" name="list_style" value="inline_url" id="list_inline_url">
+					<label for="list_inline_url">
+						<div class="links_inline">
+							<div class="details">
+								<img class="icon" src="chrome://favicon/http://www.google.com/chrome/intl/en/landing_chrome.html?hl=en"/>
+								<div class="title url" title="Google Chrome">www.google.com/chrome</div>
+							</div>
+						</div>
+
+					</label>
+
+					<div class="spacer"></div>
+
+
+
+				</fieldset>
+
+				<fieldset>
+					<legend>Appearance:</legend>
+
+					<div style="width:210px;float:left;">
+
+						<input type="checkbox" name="typed_only" value="1" id="typed_only">
+						<label for="typed_only">Only include URLs I typed</label><br>
+
+						<input type="checkbox" name="show_protocol" value="1" id="show_protocol">
+						<label for="show_protocol">Display URL protocol (http://)</label><br>
+
+						<table style="margin-top:4px;">
+							<colgroup>
+								<col width="105" />
+								<col width="*" />
+							</colgroup>
+							<tr>
+								<td><label for="width">List width: </label></td>
+								<td><input type="text" maxlength="3" name="width" id="width" value="600" style="width:30px;"/> px</td>
+							</tr>
+							<tr>
+								<td><label for="link_num">Number of links: </label></td>
+								<td><input type="text" maxlength="2" name="link_num" id="link_num" value="12" style="width:30px;"/></td>
+							</tr>
+						</table>
+
+						<span style="font-size:11px;margin-top:10px;float:left;width:100%">Tip: Preview color changes above</span>
+
+					</div>
+
+					<div style="float:left;">
+
+						<table>
+							<colgroup>
+								<col width="105" />
+								<col width="*" />
+							</colgroup>
+							<tr>
+								<td><label for="primary_color">Primary color: </label></td>
+								<td><input class="color {hash:true}" type="text" maxlength="12" name="primary_color" id="primary_color" value="#858586" style="width:70px;"/></td>
+							</tr>
+							<tr>
+								<td><label for="secondary_color">Secondary color: </label></td>
+								<td><input class="color {hash:true}" type="text" maxlength="12" name="secondary_color" id="secondary_color" value="#A5B7A5" style="width:70px;"/></td>
+							</tr>
+							<tr>
+								<td><label for="hover_color">Hover color: </label></td>
+								<td><input class="color {hash:true}" type="text" maxlength="12" name="hover_color" id="hover_color" value="#CDE5FF" style="width:70px;"/></td>
+							</tr>
+							<tr>
+								<td><label for="border_color">Separator color: </label></td>
+								<td><input class="color {hash:true}" type="text" maxlength="12" name="border_color" id="border_color" value="#F1F8FF" style="width:70px;"/></td>
+							</tr>
+							<tr>
+								<td><label for="background_color">Background color: </label></td>
+								<td><input class="color {hash:true}" type="text" maxlength="12" name="background_color" id="background_color" value="#FFFFFF" style="width:70px;"/></td>
+							</tr>
+
+						</table>
+					</div>
+
+				</fieldset>
+
+				<fieldset>
+					<legend>On Middle Click:</legend>
+
+					<input type="radio" name="middle" value="foreground" id="middle_foreground" checked>
+					<label for="middle_foreground">Open link in a new tab</label><br>
+
+					<input type="radio" name="middle" value="background" id="middle_background">
+					<label for="middle_background">Open in a background tab</label><br>
+				</fieldset>
+
+				<fieldset>
+					<legend>Ignore List:</legend>
+
+					<select name="ignore_list" id="ignore_list" style="width:385px">
+
+					</select>
+					<br>
+					<input type="checkbox" name="reset_ignore" value="1" id="reset_ignore">
+					<label for="reset_ignore" id="reset_ignore_label">Reset All (0 items)</label><br>
+
+				</fieldset>
+
+				<br/>
+
+				<input type="button" value="Save" id="save_button" onclick="saveOptions()"/>
+				<input type="button" value="Reset" id="reset_button" onclick="resetOptions()"/>
+				<span id="form_status">Options Saved...</span>
+			</form>
+		</div>
+	</body>
+</html>

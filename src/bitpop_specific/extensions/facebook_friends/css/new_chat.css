@@ -1,0 +1,360 @@
+/*
+  BitPop browser. Facebook chat integration part.
+  Copyright (C) 2014 BitPop AS
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+html,body {
+  width: 270px;
+  height: 320px;
+}
+/* General CSS Setup */
+body{
+  background-color: #edeff4;
+  font-family: "Ubuntu-Italic", "Lucida Sans", helvetica, sans;
+  font-size: 12px;
+}
+
+.chat-wrap {
+  width: 270px;
+}
+
+.chat-head {
+  font-weight: bold;
+  border-radius: 3px 3px 0 0;
+  padding: 0 5px 0 8px;
+  line-height: 2.4em;
+  background-color: DarkCyan;
+  color: #0D1942;
+  color: #011b74;
+  background-image: -webkit-linear-gradient(bottom, #d9e8b6 0%,#aecc98 44%,#62bd5d 100%);
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+  text-shadow: rgba(255,255,255,0.8) 0 1px 0;
+}
+
+.side-borders {
+  border: 1px solid;
+  border-color: transparent rgba(0,0,0,0.18);
+}
+
+.bottom-border {
+  border-bottom: 1px solid rgba(0,0,0,0.28);
+}
+
+
+.messages-wrap {
+  margin: -6px 0 0;
+  padding: 8px 5px 7px;
+}
+/* container */
+.container {
+  width: 100%;
+}
+
+.box-inner {
+  padding-top: 5px;
+}
+
+.chat-message, .chat-message .float {
+/*  -webkit-filter: custom(url(data:text/plain;base64,LyoKICogQ29weXJpZ2h0IChjKSAyMDEyIEFkb2JlIFN5c3RlbXMgSW5jb3Jwb3JhdGVkLiBBbGwgcmlnaHRzIHJlc2VydmVkLgogKiAKICogTGljZW5zZWQgdW5kZXIgdGhlIEFwYWNoZSBMaWNlbnNlLCBWZXJzaW9uIDIuMCAodGhlICJMaWNlbnNlIik7CiAqIHlvdSBtYXkgbm90IHVzZSB0aGlzIGZpbGUgZXhjZXB0IGluIGNvbXBsaWFuY2Ugd2l0aCB0aGUgTGljZW5zZS4KICogWW91IG1heSBvYnRhaW4gYSBjb3B5IG9mIHRoZSBMaWNlbnNlIGF0CiAqIAogKiAgICAgaHR0cDovL3d3dy5hcGFjaGUub3JnL2xpY2Vuc2VzL0xJQ0VOU0UtMi4wCiAqIAogKiBVbmxlc3MgcmVxdWlyZWQgYnkgYXBwbGljYWJsZSBsYXcgb3IgYWdyZWVkIHRvIGluIHdyaXRpbmcsIHNvZnR3YXJlCiAqIGRpc3RyaWJ1dGVkIHVuZGVyIHRoZSBMaWNlbnNlIGlzIGRpc3RyaWJ1dGVkIG9uIGFuICJBUyBJUyIgQkFTSVMsCiAqIFdJVEhPVVQgV0FSUkFOVElFUyBPUiBDT05ESVRJT05TIE9GIEFOWSBLSU5ELCBlaXRoZXIgZXhwcmVzcyBvciBpbXBsaWVkLgogKiBTZWUgdGhlIExpY2Vuc2UgZm9yIHRoZSBzcGVjaWZpYyBsYW5ndWFnZSBnb3Zlcm5pbmcgcGVybWlzc2lvbnMgYW5kCiAqIGxpbWl0YXRpb25zIHVuZGVyIHRoZSBMaWNlbnNlLgogKi8KCnByZWNpc2lvbiBtZWRpdW1wIGZsb2F0OwoKLy8gQnVpbHQtaW4gYXR0cmlidXRlcwoKYXR0cmlidXRlIHZlYzQgYV9wb3NpdGlvbjsKYXR0cmlidXRlIHZlYzIgYV90ZXhDb29yZDsKYXR0cmlidXRlIHZlYzMgYV90cmlhbmdsZUNvb3JkOwoKLy8gVW5pZm9ybXMKCnVuaWZvcm0gbWF0NCB1X3Byb2plY3Rpb25NYXRyaXg7CnVuaWZvcm0gdmVjMiB1X3RleHR1cmVTaXplOwoKLy8gVW5pZm9ybXMgcGFzc2VkIGluIGZyb20gQ1NTCgp1bmlmb3JtIG1hdDQgbWF0cml4Owp1bmlmb3JtIGZsb2F0IHQ7CgovLyBNYWluCgp2b2lkIG1haW4oKQp7CiAgICBnbF9Qb3NpdGlvbiA9IHVfcHJvamVjdGlvbk1hdHJpeCAqIG1hdHJpeCAqIGFfcG9zaXRpb247Cn0K) mix(url(data:text/plain;base64,LyoKICogQ29weXJpZ2h0IChjKSAyMDEyIEFkb2JlIFN5c3RlbXMgSW5jb3Jwb3JhdGVkLiBBbGwgcmlnaHRzIHJlc2VydmVkLgogKiAKICogTGljZW5zZWQgdW5kZXIgdGhlIEFwYWNoZSBMaWNlbnNlLCBWZXJzaW9uIDIuMCAodGhlICJMaWNlbnNlIik7CiAqIHlvdSBtYXkgbm90IHVzZSB0aGlzIGZpbGUgZXhjZXB0IGluIGNvbXBsaWFuY2Ugd2l0aCB0aGUgTGljZW5zZS4KICogWW91IG1heSBvYnRhaW4gYSBjb3B5IG9mIHRoZSBMaWNlbnNlIGF0CiAqIAogKiAgICAgaHR0cDovL3d3dy5hcGFjaGUub3JnL2xpY2Vuc2VzL0xJQ0VOU0UtMi4wCiAqIAogKiBVbmxlc3MgcmVxdWlyZWQgYnkgYXBwbGljYWJsZSBsYXcgb3IgYWdyZWVkIHRvIGluIHdyaXRpbmcsIHNvZnR3YXJlCiAqIGRpc3RyaWJ1dGVkIHVuZGVyIHRoZSBMaWNlbnNlIGlzIGRpc3RyaWJ1dGVkIG9uIGFuICJBUyBJUyIgQkFTSVMsCiAqIFdJVEhPVVQgV0FSUkFOVElFUyBPUiBDT05ESVRJT05TIE9GIEFOWSBLSU5ELCBlaXRoZXIgZXhwcmVzcyBvciBpbXBsaWVkLgogKiBTZWUgdGhlIExpY2Vuc2UgZm9yIHRoZSBzcGVjaWZpYyBsYW5ndWFnZSBnb3Zlcm5pbmcgcGVybWlzc2lvbnMgYW5kCiAqIGxpbWl0YXRpb25zIHVuZGVyIHRoZSBMaWNlbnNlLgogKi8KCnByZWNpc2lvbiBtZWRpdW1wIGZsb2F0OwoKdW5pZm9ybSBmbG9hdCB0OwoKdm9pZCBtYWluKCkKewogIGlmICh0IDwgMC41KSB7CiAgICBjc3NfTWl4Q29sb3IgPSB2ZWM0KDIzNy4vMjU1LiwgMjM5Li8yNTUuLCAyNDQuLzI1NS4sIDEuIC0gY2xhbXAoMC41KnQsIDAuLCAxLikpOwogIH0KfQo=) normal source-atop), 1 1 border-box detached, matrix perspective(1000) scale(1) rotateX(180deg) rotateY(0deg) rotateZ(0deg), t 0);
+  -webkit-transition: -webkit-filter 1000ms ease-out;
+*/
+  clear: both;
+}
+
+.chat-message.created {
+/*
+  -webkit-filter: custom(url(data:text/plain;base64,LyoKICogQ29weXJpZ2h0IChjKSAyMDEyIEFkb2JlIFN5c3RlbXMgSW5jb3Jwb3JhdGVkLiBBbGwgcmlnaHRzIHJlc2VydmVkLgogKiAKICogTGljZW5zZWQgdW5kZXIgdGhlIEFwYWNoZSBMaWNlbnNlLCBWZXJzaW9uIDIuMCAodGhlICJMaWNlbnNlIik7CiAqIHlvdSBtYXkgbm90IHVzZSB0aGlzIGZpbGUgZXhjZXB0IGluIGNvbXBsaWFuY2Ugd2l0aCB0aGUgTGljZW5zZS4KICogWW91IG1heSBvYnRhaW4gYSBjb3B5IG9mIHRoZSBMaWNlbnNlIGF0CiAqIAogKiAgICAgaHR0cDovL3d3dy5hcGFjaGUub3JnL2xpY2Vuc2VzL0xJQ0VOU0UtMi4wCiAqIAogKiBVbmxlc3MgcmVxdWlyZWQgYnkgYXBwbGljYWJsZSBsYXcgb3IgYWdyZWVkIHRvIGluIHdyaXRpbmcsIHNvZnR3YXJlCiAqIGRpc3RyaWJ1dGVkIHVuZGVyIHRoZSBMaWNlbnNlIGlzIGRpc3RyaWJ1dGVkIG9uIGFuICJBUyBJUyIgQkFTSVMsCiAqIFdJVEhPVVQgV0FSUkFOVElFUyBPUiBDT05ESVRJT05TIE9GIEFOWSBLSU5ELCBlaXRoZXIgZXhwcmVzcyBvciBpbXBsaWVkLgogKiBTZWUgdGhlIExpY2Vuc2UgZm9yIHRoZSBzcGVjaWZpYyBsYW5ndWFnZSBnb3Zlcm5pbmcgcGVybWlzc2lvbnMgYW5kCiAqIGxpbWl0YXRpb25zIHVuZGVyIHRoZSBMaWNlbnNlLgogKi8KCnByZWNpc2lvbiBtZWRpdW1wIGZsb2F0OwoKLy8gQnVpbHQtaW4gYXR0cmlidXRlcwoKYXR0cmlidXRlIHZlYzQgYV9wb3NpdGlvbjsKYXR0cmlidXRlIHZlYzIgYV90ZXhDb29yZDsKYXR0cmlidXRlIHZlYzMgYV90cmlhbmdsZUNvb3JkOwoKLy8gVW5pZm9ybXMKCnVuaWZvcm0gbWF0NCB1X3Byb2plY3Rpb25NYXRyaXg7CnVuaWZvcm0gdmVjMiB1X3RleHR1cmVTaXplOwoKLy8gVW5pZm9ybXMgcGFzc2VkIGluIGZyb20gQ1NTCgp1bmlmb3JtIG1hdDQgbWF0cml4Owp1bmlmb3JtIGZsb2F0IHQ7CgovLyBNYWluCgp2b2lkIG1haW4oKQp7CiAgICBnbF9Qb3NpdGlvbiA9IHVfcHJvamVjdGlvbk1hdHJpeCAqIG1hdHJpeCAqIGFfcG9zaXRpb247Cn0K) mix(url(data:text/plain;base64,LyoKICogQ29weXJpZ2h0IChjKSAyMDEyIEFkb2JlIFN5c3RlbXMgSW5jb3Jwb3JhdGVkLiBBbGwgcmlnaHRzIHJlc2VydmVkLgogKiAKICogTGljZW5zZWQgdW5kZXIgdGhlIEFwYWNoZSBMaWNlbnNlLCBWZXJzaW9uIDIuMCAodGhlICJMaWNlbnNlIik7CiAqIHlvdSBtYXkgbm90IHVzZSB0aGlzIGZpbGUgZXhjZXB0IGluIGNvbXBsaWFuY2Ugd2l0aCB0aGUgTGljZW5zZS4KICogWW91IG1heSBvYnRhaW4gYSBjb3B5IG9mIHRoZSBMaWNlbnNlIGF0CiAqIAogKiAgICAgaHR0cDovL3d3dy5hcGFjaGUub3JnL2xpY2Vuc2VzL0xJQ0VOU0UtMi4wCiAqIAogKiBVbmxlc3MgcmVxdWlyZWQgYnkgYXBwbGljYWJsZSBsYXcgb3IgYWdyZWVkIHRvIGluIHdyaXRpbmcsIHNvZnR3YXJlCiAqIGRpc3RyaWJ1dGVkIHVuZGVyIHRoZSBMaWNlbnNlIGlzIGRpc3RyaWJ1dGVkIG9uIGFuICJBUyBJUyIgQkFTSVMsCiAqIFdJVEhPVVQgV0FSUkFOVElFUyBPUiBDT05ESVRJT05TIE9GIEFOWSBLSU5ELCBlaXRoZXIgZXhwcmVzcyBvciBpbXBsaWVkLgogKiBTZWUgdGhlIExpY2Vuc2UgZm9yIHRoZSBzcGVjaWZpYyBsYW5ndWFnZSBnb3Zlcm5pbmcgcGVybWlzc2lvbnMgYW5kCiAqIGxpbWl0YXRpb25zIHVuZGVyIHRoZSBMaWNlbnNlLgogKi8KCnByZWNpc2lvbiBtZWRpdW1wIGZsb2F0OwoKdW5pZm9ybSBmbG9hdCB0OwoKdm9pZCBtYWluKCkKewogIGlmICh0IDwgMC41KSB7CiAgICBjc3NfTWl4Q29sb3IgPSB2ZWM0KDIzNy4vMjU1LiwgMjM5Li8yNTUuLCAyNDQuLzI1NS4sIDEuIC0gY2xhbXAoMC41KnQsIDAuLCAxLikpOwogIH0KfQo=) normal source-atop), 1 1 border-box detached, matrix perspective(1000) scale(1) rotateX(0deg) rotateY(0deg) rotateZ(0deg), t 1);
+*/
+}
+.chat-message {
+  overflow: hidden;
+}
+
+.chat-message .float {
+  position: relative;
+}
+
+.chat-message.self .float {
+  float: right;
+}
+
+.chat-message.not-self .float {
+  float: left;
+}
+
+.chat-message .timestamp {
+  line-height: 2em;
+  text-align: center;
+  font-size: smaller;
+  color: #888;
+  text-shadow: rgba(255, 255, 255, 1) 0 1px 0;
+}
+
+.hidden1 {
+  display: none;
+}
+
+/* CSS talk bubble */
+.talk-bubble {
+  color: #3e454c;
+  text-shadow: rgba(255, 255, 255, .5) 0 1px 0;
+	margin:7px;
+  margin-top: 0;
+  margin-left: 44px;
+  display: inline-block;
+  position: relative;
+  width: auto;
+	max-width: 190px;
+	height: auto;
+	background-image: -webkit-linear-gradient(bottom, #f2f2d2, #fff);
+  -webkit-box-shadow: 0 1px 0 #dce0e6;
+  word-wrap: break-word;
+}
+
+.talk-bubble.left-in {
+  margin-left: 44px;
+  margin-right: 17px;
+}
+
+.talk-bubble.right-in {
+  margin-left: 54px;
+  margin-right: 14px;
+}
+
+.border{
+  border: 1px solid rgba(0, 0, 0, .18);
+  border-bottom-color: rgba(0, 0, 0, 0.290196);
+}
+.round{
+  border-radius: 5px;
+	-webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+
+}
+
+/* Right triangle, left side slightly down */
+.tri-right.border.left-in:before {
+	content: ' ';
+	position: absolute;
+	width: 0;
+	height: 0;
+  left: -11px;
+	right: auto;
+  top: 11px;
+	bottom: auto;
+  border: 5px solid rgba(0, 0, 0, .18);
+	border-color: rgba(0, 0, 0, .18) rgba(0, 0, 0, .18) transparent transparent;
+}
+.tri-right.left-in:after{
+	content: ' ';
+	position: absolute;
+	width: 0;
+	height: 0;
+  left: -8px;
+	right: auto;
+  top: 12px;
+	bottom: auto;
+	border: 4px solid;
+	border-color: lightyellow lightyellow transparent transparent;
+}
+
+/* Right triangle, right side slightly down*/
+.tri-right.border.right-in:before {
+	content: ' ';
+	position: absolute;
+	width: 0;
+	height: 0;
+  left: auto;
+	right: -11px;
+  top: 11px;
+	bottom: auto;
+border: 5px solid rgba(0, 0, 0, .18);
+	border-color: rgba(0, 0, 0, .18) transparent transparent rgba(0, 0, 0, .18);
+}
+.tri-right.right-in:after{
+	content: ' ';
+	position: absolute;
+	width: 0;
+	height: 0;
+  left: auto;
+	right: -8px;
+  top: 12px;
+	bottom: auto;
+	border: 5px solid;
+	border-color: #ecf0f2 transparent transparent #ecf0f2;
+}
+
+/* talk bubble contents */
+.talktext{
+  padding: 0.5em;
+	text-align: left;
+  line-height: 1.3em;
+}
+
+.talktext p{
+  /* remove webkit p margins */
+  -webkit-margin-before: 0em;
+  -webkit-margin-after: 0em;
+}
+
+.talktext img.sticker-img {
+  max-height: 128px;
+}
+
+.talktext img.smiley {
+  width: 16px;
+  height: 16px;
+}
+
+.profile-image-link {
+  display: block;
+  position: absolute;
+}
+.profile-image-link:after {
+  background-image: url(http://54.194.61.109/public/neat_avatar_overlay.png);
+  background-repeat: no-repeat;
+  background-size: auto;
+  content: '';
+  height: 36px;
+  left: -2px;
+  position: absolute;
+  top: -2px;
+  width: 36px;
+/*  background-position: 4px 4px;
+  */
+}
+.profile-image-link img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border: 0;
+}
+.tri-right.right-in {
+  background-image: -webkit-linear-gradient(bottom, #e0ffd0, #f0fff8);
+  background-image: -webkit-linear-gradient(top, #fafff4 0%,#eff2e8 37%,#cce3b9 100%); 
+}
+.tri-right.right-in:after {
+  border-color: #e8ece0 transparent transparent #e8ece0 !important;
+}
+.chat-input {
+  position: relative;
+  background-color: white;
+  border-top: solid 1px rgba(0, 0, 0, 0.18);
+}
+textarea {
+  font-size: 1em;
+  border: none;
+  display: block;
+  text-indent: 17px;
+  width: 220px;
+  min-height: 21px;
+  max-height: 5.6em;
+  height: 21px;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  overflow-x: hidden;
+}
+.chatarea-icon {
+  background-image: url(../images/chat/chatarea-icon.png);
+  position: absolute;
+  display: block;
+  width: 11px;
+  height: 12px;
+  top: 4px;
+  left: 4px;
+}
+.share-link {
+  display: block;
+  position: absolute;
+  right: 5px;
+  left: auto;
+  top: 1px;
+  bottom: auto;
+  width: 16px;
+  height: 16px;
+  background-image: url(../images/chat/paste-uri-icon.png);
+  opacity: 0.7;
+}
+.share-link:active {
+  top: 2px;
+  right: 4px;
+}
+.chat-wrap {
+  /*display: -webkit-flex;
+  -webkit-flex-direction: column;*/
+  overflow: hidden;
+  height: 320px;
+}
+.chat-head {
+  /*-webkit-flex: 1 0 auto;*/
+}
+.antiscroll-wrap {
+  /*overflow: scroll;
+  -webkit-flex: 1 1 auto;
+  */
+}
+.antiscroll-inner {
+  height: 265px;
+}
+.smileys {
+  position: relative;
+  /*-webkit-flex: 1 0 auto;*/
+  -webkit-user-select: none;
+  padding: 20px;
+  border-top: solid 1px #ccc;
+  background-color: #eee;
+}
+
+.smileys img {
+  vertical-align: middle;
+  margin: 5px 9px;
+}
+
+.smileys a:hover img {
+  border: 1px solid #ccc;
+  margin: 4px 8px;
+}
+
+.chat-input {
+  /*-webkit-flex: 1 0 auto;*/
+}
+
+.smiley {
+  vertical-align: middle;
+}
+
+.paste-smiley {
+  background-image: url(../images/smileys/button.png);
+  background-size: 15px;
+  width: 15px;
+  height: 15px;
+  top: 3px;
+  right: 25px;
+  position: absolute;
+  cursor: pointer;
+}
+
+.close-smileys {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 32px;
+  height: 32px;
+  opacity: 0.4;
+  cursor: pointer;
+  background-image: url(../images/smileys/close.png);
+}

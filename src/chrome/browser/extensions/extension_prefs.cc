@@ -1643,7 +1643,8 @@ scoped_ptr<ExtensionInfo> ExtensionPrefs::GetInstalledExtensionInfo(
   // preferences.
   Extension::Location location =
       static_cast<Extension::Location>(location_value);
-  if (location != Extension::INTERNAL &&
+  if (location != Extension::COMPONENT &&
+      location != Extension::INTERNAL &&
       location != Extension::LOAD &&
       !Extension::IsExternalLocation(location)) {
     NOTREACHED();
@@ -2276,6 +2277,48 @@ void ExtensionPrefs::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(kSideloadWipeoutDone,
                              false,
                              PrefService::UNSYNCABLE_PREF);
+
+  // ----------------------------------------------------------
+  // BitPop custom extensions preference registration:
+  //
+  // ----------------------------------------------------------
+  prefs->RegisterBooleanPref(prefs::kFacebookShowChat,
+                            false,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kFacebookShowJewels,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kUncensorShouldRedirect,
+                             0,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kUncensorShowMessage,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kUncensorNotifyUpdates,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kUncensorDomainFilter,
+                            "{}", // JSON
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kUncensorDomainExceptions,
+                            "{}", // JSON
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kGlobalProxyControl,
+                             0,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kShowMessageForActiveProxy,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kIPRecognitionCountryName,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kBlockedSitesList,
+                            "[]",
+                            PrefService::SYNCABLE_PREF);
+  // ----------------------------------------------------------
+  // End of BitPop custom extensions preference registration
+  //
+  // ----------------------------------------------------------
 }
 
 ExtensionIdList ExtensionPrefs::GetExtensionPrefAsVector(

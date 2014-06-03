@@ -9,11 +9,11 @@
 #define FPL FILE_PATH_LITERAL
 
 #if defined(OS_MACOSX)
-#define CHROMIUM_PRODUCT_STRING "Chromium"
+#define CHROMIUM_PRODUCT_STRING "BitPop"
 #if defined(GOOGLE_CHROME_BUILD)
 #define PRODUCT_STRING "Google Chrome"
 #elif defined(CHROMIUM_BUILD)
-#define PRODUCT_STRING "Chromium"
+#define PRODUCT_STRING "BitPop"
 #else
 #error Unknown branding
 #endif
@@ -23,7 +23,7 @@
 #if defined(GOOGLE_CHROME_BUILD)
 #define PRODUCT_STRING_PATH L"Google\\Chrome"
 #elif defined(CHROMIUM_BUILD)
-#define PRODUCT_STRING_PATH L"Chromium"
+#define PRODUCT_STRING_PATH L"BitPop"
 #else
 #error Unknown branding
 #endif
@@ -31,7 +31,7 @@
 
 namespace chrome {
 
-const char kChromeVersionEnvVar[] = "CHROME_VERSION";
+const char kChromeVersionEnvVar[] = "BITPOP_VERSION";
 
 // The following should not be used for UI strings; they are meant
 // for system strings only. UI changes should be made in the GRD.
@@ -52,11 +52,11 @@ const char kChromeVersionEnvVar[] = "CHROME_VERSION";
 
 #if defined(OS_WIN)
 const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
-    FPL("chrome.exe");
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome.exe");
+    FPL("bitpop.exe");
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop.exe");
 const FilePath::CharType kHelperProcessExecutableNameChromium[] =
-    FPL("chrome.exe");
-const FilePath::CharType kHelperProcessExecutableName[] = FPL("chrome.exe");
+    FPL("bitpop.exe");
+const FilePath::CharType kHelperProcessExecutableName[] = FPL("bitpop.exe");
 #elif defined(OS_MACOSX)
 const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING);
@@ -67,7 +67,7 @@ const FilePath::CharType kHelperProcessExecutableName[] =
     FPL(PRODUCT_STRING " Helper");
 #elif defined(OS_ANDROID)
 // NOTE: Keep it synced with the process names defined in AndroidManifest.xml.
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
 const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("");
 const FilePath::CharType kHelperProcessExecutableName[] =
@@ -76,7 +76,7 @@ const FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("");
 #elif defined(OS_POSIX)
 const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("chrome");
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
 // Helper processes end up with a name of "exe" due to execing via
 // /proc/self/exe.  See bug 22703.
 const FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("exe");
@@ -85,11 +85,11 @@ const FilePath::CharType kHelperProcessExecutableName[] = FPL("exe");
 
 #if defined(OS_WIN)
 const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
-    FPL("chrome.exe");
-const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome.exe");
+    FPL("bitpop.exe");
+const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("bitpop.exe");
 const FilePath::CharType kHelperProcessExecutablePathChromium[] =
-    FPL("chrome.exe");
-const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome.exe");
+    FPL("bitpop.exe");
+const FilePath::CharType kHelperProcessExecutablePath[] = FPL("bitpop.exe");
 #elif defined(OS_MACOSX)
 const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING ".app/Contents/MacOS/" CHROMIUM_PRODUCT_STRING);
@@ -129,12 +129,12 @@ const wchar_t kNaClAppName[] = L"nacl64";
 #if defined(GOOGLE_CHROME_BUILD)
 const wchar_t kBrowserAppName[] = L"Chrome";
 #else
-const wchar_t kBrowserAppName[] = L"Chromium";
+const wchar_t kBrowserAppName[] = L"BitPop";
 #endif
 
 #if defined(OS_WIN)
 const FilePath::CharType kMetroDriverDll[] = FPL("metro_driver.dll");
-const wchar_t kStatusTrayWindowClass[] = L"Chrome_StatusTrayWindow";
+const wchar_t kStatusTrayWindowClass[] = L"BitPop_StatusTrayWindow";
 #endif  // defined(OS_WIN)
 
 const wchar_t kMessageWindowClass[] = L"Chrome_MessageWindow";
@@ -245,6 +245,17 @@ const wchar_t kMetroRegistryPath[] =
 const wchar_t kLaunchModeValue[] = L"launch_mode";
 #endif
 
+const char kFacebookChatExtensionId[] = "engefnlnhcgeegefndkhijjfdfbpbeah";
+const char kFacebookControllerExtensionId[] = "igddmhdmkpkonlbfabbkkdoploafopcn";
+const char kFacebookMessagesExtensionId[] = "dhcejgafhmkdfanoalflifpjimaaijda";
+const char kFacebookNotificationsExtensionId[] = "omkphklbdjafhafacohmepaahbofnkcp";
+const char kUncensorISPExtensionId[] = "fjfallkmojjifpfkopjoogodecehcjam";
+const char kUncensorFilterExtensionId[] = "oadgfoondcimpmclpkphkdnjhaddaehg";
+const char kGoogleDocsExtensionId[] = "nnbmlagghjjcbdhgmkedmbmedengocbn";
+const char kFacebookShareExtensionId[] = "geoplninmkljnhklaihoejihlogghapi";
+const char kDropdownListExtensionId[] = "jcpicigjjhpmobmnaoegfajemdcjkjdm";
+const char kBittorrentSurfExtensionId[] = "pchkdmeolfddeeedkhlfolaenanehddd";
+const char kBitPopGiftExtensionId[] = "kggkfhmkfhphhpieneonpjdggjheibjg";
 }  // namespace chrome
 
 #undef FPL

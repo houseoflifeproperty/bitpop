@@ -51,6 +51,9 @@ bool IsVisible(gfx::NativeView view);
 bool IsSwipeTrackingFromScrollEventsEnabled();
 #endif
 
+void setUseAutomaticUpdates(bool useAutomaticUpdates);
+bool getUseAutomaticUpdates();
+
 }  // platform_util
 
 #endif  // CHROME_BROWSER_PLATFORM_UTIL_H_

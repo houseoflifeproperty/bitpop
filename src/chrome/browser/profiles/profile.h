@@ -367,6 +367,9 @@ class Profile : public content::BrowserContext {
   // Creates an OffTheRecordProfile which points to this Profile.
   Profile* CreateOffTheRecordProfile();
 
+  virtual bool should_show_additional_extensions() const;
+  virtual void set_should_show_additional_extensions(bool flag);
+
  protected:
   // TODO(erg, willchan): Remove friendship once |ProfileIOData| is made into
   //     a |ProfileKeyedService|.

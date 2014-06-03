@@ -63,7 +63,7 @@ const wchar_t kXUACompatValue[] = L"x-ua-compatible";
 
 // Registry key and value names related to Chrome Frame configuration options.
 const wchar_t kAllowUnsafeURLs[] = L"AllowUnsafeURLs";
-const wchar_t kChromeFrameConfigKey[] = L"Software\\Google\\ChromeFrame";
+const wchar_t kChromeFrameConfigKey[] = L"Software\\HouseOfLife\\ChromeFrame";
 const wchar_t kEnableBuggyBhoIntercept[] = L"EnableBuggyBhoIntercept";
 const wchar_t kEnableGCFRendererByDefault[] = L"IsDefaultRenderer";
 const wchar_t kExcludeUAFromDomainList[] = L"ExcludeUAFromDomain";

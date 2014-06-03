@@ -232,6 +232,12 @@ class BrowserActionsContainer
   // animates to open/closed status.
   static bool disable_animations_during_testing_;
 
+  // Toggling the extensions depending on online/offline status of our facebook connection
+  void ShowFacebookExtensions();
+  void HideFacebookExtensions();
+
+  void SetFacebookExtensionsVisibility(bool visible);
+
  protected:
   // Overridden from views::View:
   virtual void ViewHierarchyChanged(bool is_add,

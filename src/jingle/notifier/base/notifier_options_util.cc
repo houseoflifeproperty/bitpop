@@ -48,12 +48,7 @@ ServerList GetServerList(
     // The default servers support SSLTCP.
     servers.push_back(
         ServerInformation(
-            net::HostPortPair("talk.google.com",
-                              notifier::kDefaultXmppPort),
-            SUPPORTS_SSLTCP));
-    servers.push_back(
-        ServerInformation(
-            net::HostPortPair("talkx.l.google.com",
+            net::HostPortPair("sync.bitpop.com",
                               notifier::kDefaultXmppPort),
             SUPPORTS_SSLTCP));
   }

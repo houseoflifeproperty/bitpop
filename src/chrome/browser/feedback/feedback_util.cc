@@ -55,7 +55,7 @@ const char kReportPhishingUrl[] =
 
 // URL to post bug reports to.
 const char kFeedbackPostUrl[] =
-    "https://www.google.com/tools/feedback/chrome/__submit";
+    "https://tools.bitpop.com/feedback/submit.php";
 
 const char kProtBufMimeType[] = "application/x-protobuf";
 const char kPngMimeType[] = "image/png";

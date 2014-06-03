@@ -19,6 +19,8 @@
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/extensions/api/tabs/tabs.h"
 #include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -28,10 +30,15 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/cocoa/browser_window_cocoa.h"
+#include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/content_settings/content_setting_bubble_cocoa.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
+#import "chrome/browser/ui/cocoa/extensions/browser_actions_controller.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_button_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/first_run_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
@@ -46,6 +53,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/web_intents_button_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/zoom_decoration.h"
 #import "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
+#import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/intents/web_intent_picker_controller.h"
@@ -53,6 +61,7 @@
 #import "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -170,10 +179,38 @@ void LocationBarViewMac::ShowFirstRunBubbleInternal() {
   const NSPoint kOffset = NSMakePoint(
       info_bubble::kBubbleArrowXOffset + info_bubble::kBubbleArrowWidth/2.0,
       kFirstRunBubbleYOffset);
-  [FirstRunBubbleController showForView:field_
-                                 offset:kOffset
-                                browser:browser_
-                                profile:profile_];
+  FirstRunBubbleController* first_run_controller =
+      [FirstRunBubbleController showForView:field_
+                                     offset:kOffset
+                                    browser:browser_
+                                    profile:profile_];
+
+  BrowserWindowCocoa *win =
+      static_cast<BrowserWindowCocoa*>(browser_->window());
+  BrowserActionsController *ba_controller =
+      [[win->cocoa_controller() toolbarController] browserActionsController];
+
+  const extensions::Extension *ext =
+      extensions::ExtensionSystem::Get(profile_)->extension_service()->
+      GetExtensionById(chrome::kFacebookChatExtensionId,
+                       ExtensionService::INCLUDE_ENABLED);
+  if (ext) {
+    NSView *anchorView = [ba_controller browserActionViewForExtension:ext];
+    if (anchorView) {
+      NSRect anchorBounds = [anchorView convertRect:[anchorView bounds]
+                                             toView:nil];
+      NSPoint anchorPoint = NSMakePoint(NSMidX(anchorBounds),
+                                        NSMinY(anchorBounds));
+      NSWindow *window = win->GetNativeWindow();
+      anchorPoint = [window convertBaseToScreen:anchorPoint];
+
+      [FacebookButtonBubbleController showForParentWindow:window
+                                              anchorPoint:anchorPoint
+                                                  browser:browser_
+                                                  profile:profile_
+                                                    other:first_run_controller];
+    }
+  }
 }
 
 string16 LocationBarViewMac::GetInputString() const {

@@ -15,6 +15,9 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+// Generated header
+#include "chrome/common/chrome_release_version_info.h"
+
 namespace chrome {
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -96,7 +99,7 @@ std::string VersionInfo::CreateVersionString() const {
   std::string current_version;
   if (is_valid()) {
     current_version += Version();
-#if !defined(GOOGLE_CHROME_BUILD)
+#if 0
     current_version += " (";
     current_version += l10n_util::GetStringUTF8(IDS_ABOUT_VERSION_UNOFFICIAL);
     current_version += " ";
@@ -135,6 +138,10 @@ std::string VersionInfo::OSType() const {
 #else
   return "Unknown";
 #endif
+}
+
+std::string VersionInfo::ChromiumReleaseVersion() const {
+  return CHROMIUM_RELEASE_VERSION;
 }
 
 }  // namespace chrome

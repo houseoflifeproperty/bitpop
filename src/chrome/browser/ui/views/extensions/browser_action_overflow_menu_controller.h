@@ -115,6 +115,10 @@ class BrowserActionOverflowMenuController : public views::MenuDelegate {
   // Whether this controller is being used for drop.
   bool for_drop_;
 
+  int facebook_chat_item_id_;
+  int facebook_messages_item_id_;
+  int facebook_notifications_item_id_;
+
   friend class base::DeleteHelper<BrowserActionOverflowMenuController>;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserActionOverflowMenuController);

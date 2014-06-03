@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="am">
 <translation id="6879617193011158416">የዕልባት አሞሌ ይቀይሩ</translation>
@@ -66,7 +66,7 @@
 <translation id="4940047036413029306">ጥቅስ</translation>
 <translation id="1497897566809397301">የውስጥ ውሂብ እንዲዘጋጅ ፍቀድ (የሚደገፍ)</translation>
 <translation id="3275778913554317645">እንደ መስኮት ክፈት</translation>
-<translation id="4553117311324416101">ከቀጠሉ በኮምፒውተርዎ ላይ ሊጫን የሚችል ተንኮል-አዘል ሶፍትዌር Google አግኝቷል። ይህን ጣቢያ ከዚህ ቀደም ከጎበኙት ወይም ይህን ጣቢያ የሚያምኑት ከሆኑ በቅርብ ጊዜ በጠላፊ ተጠቅተው ሊሆኑ ይችላል። መቀጠል የለብዎትም፣ እና ነገ ወይም ሌላ ቦታ እንደገና መሞከር ሳይሻልዎት አይቀርም።</translation>
+<translation id="8198393002783366468">ከቀጠሉ በኮምፒውተርዎ ላይ ሊጫን የሚችል ተንኮል-አዘል ሶፍትዌር BitPop አግኝቷል። ይህን ጣቢያ ከዚህ ቀደም ከጎበኙት ወይም ይህን ጣቢያ የሚያምኑት ከሆኑ በቅርብ ጊዜ በጠላፊ ተጠቅተው ሊሆኑ ይችላል። መቀጠል የለብዎትም፣ እና ነገ ወይም ሌላ ቦታ እንደገና መሞከር ሳይሻልዎት አይቀርም።</translation>
 <translation id="8867568208303837180">በመላክ ላይ...</translation>
 <translation id="509988127256758334">ምን ማ&amp;ግኘት ፈለግህ፦</translation>
 <translation id="1420684932347524586">አይይ! RSA የግል ኩልፍ በዘፈቀደ ለመፍጠር አልተቻለም።</translation>
@@ -232,7 +232,7 @@
 <translation id="1818606096021558659">ገጽ</translation>
 <translation id="1549045574060481141">ማውረድ ያረጋግጡ</translation>
 <translation id="5388588172257446328">የተጠቃሚው ስም፦</translation>
-<translation id="1657406563541664238">የአጠቃቀም ስታቲክሶችን እና የስንኩል ሪፖርቶችን ወደ Google በቀጥታ በመላክ <ph name="PRODUCT_NAME"/>ን የተሻለ ለማድረግ እገዛ ያድርጉ።</translation>
+<translation id="5757566435961687655">የአጠቃቀም ስታቲክሶችን እና የስንኩል ሪፖርቶችን ወደ House of Life በቀጥታ በመላክ <ph name="PRODUCT_NAME"/>ን የተሻለ ለማድረግ እገዛ ያድርጉ።</translation>
 <translation id="7982789257301363584">አውታረ መረብ</translation>
 <translation id="2271281383664374369">ወደዚህ ዩ አር ኤል የሚደረጉ የቅጥያ ጥያቄዎች ለጊዜው ቆመዋል።</translation>
 <translation id="8528962588711550376">በመግባት ላይ.</translation>
@@ -248,7 +248,7 @@
 <translation id="1776883657531386793"><ph name="OID"/>፦ <ph name="INFO"/></translation>
 <translation id="1510030919967934016">ይህ ገጽ አካባቢዎን ከመከታተል ታግዷል።</translation>
 <translation id="8848519885565996859">በተጠቃሚ የተገለጸ የዩ አር ኤል አገናኝ ክፍለ ገጸ ድር</translation>
-<translation id="4640525840053037973">በGoogle መለያዎ ይግቡ</translation>
+<translation id="4550196943338771146">በBitPop መለያዎ ይግቡ</translation>
 <translation id="5255315797444241226">ያስገቡት የይለፍ ሐረግ ትክክል አይደለም።</translation>
 <translation id="762917759028004464">በአሁኑ ጊዜ መነሻ አሳሹ <ph name="BROWSER_NAME"/> ነው።</translation>
 <translation id="9213479837033539041"><ph name="NUMBER_MANY"/> ሰከንድ ይቀራል</translation>
@@ -295,8 +295,8 @@
           ከዚያ
           <ph name="BEGIN_BOLD"/>እሺ<ph name="END_BOLD"/>ን ጠቅ ያድርጉ።</translation>
 <translation id="2179052183774520942">የፍለጋ ፕሮግራም አክል</translation>
-<translation id="4043223219875055035">መተግበሪያዎች ቅንብሮችንና ሌሎች የተበጁ አገልግሎቶችን እንዲያመሳስሉ ለመፍቀድ በGoogle መለያዎ ይግቡ።</translation>
-<translation id="6868050610674841964">በመለያ መግባት ዕልባቶችዎን፣ ታሪክዎን እና ሌሎች በማንኛውም መሣሪያዎች ላይ ያሉ ቅንብሮችዎን እንዲደርሱበት ውሂብዎን ከGoogle መለያዎ ጋር ያመሳስለዋል።</translation>
+<translation id="7333287746989217896">መተግበሪያዎች ቅንብሮችንና ሌሎች የተበጁ አገልግሎቶችን እንዲያመሳስሉ ለመፍቀድ በBitPop መለያዎ ይግቡ።</translation>
+<translation id="5804885986789001150">በመለያ መግባት ዕልባቶችዎን፣ ታሪክዎን እና ሌሎች በማንኛውም መሣሪያዎች ላይ ያሉ ቅንብሮችዎን እንዲደርሱበት ውሂብዎን ከFacebook/BitPop መለያዎ ጋር ያመሳስለዋል።</translation>
 <translation id="5498951625591520696">ወደ አገልጋዩ ለመድረስ አልተቻለም።</translation>
 <translation id="1621207256975573490">&amp;ፍሬም አስቀምጥ እንደ…</translation>
 <translation id="4681260323810445443"><ph name="URL"/> ላይ ያለውን ድረ-ገጽ ለመድረስ ስልጣን አልተሰጠዎትም። መግባት ሊኖርብዎት ይችላል።</translation>
@@ -421,7 +421,7 @@
 <translation id="8194465509832052438">ትዕዛዞችን ያዋቅሩ</translation>
 <translation id="4422347585044846479">ለእዚህ ገጽ ዕልባት አርትዕ</translation>
 <translation id="2452539774207938933">ወደዚህ ተጠቃሚ ይቀይሩ፦ <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome አሳሹ ላይ የሚተይቡትን ለGoogle አገልጋዮች በመላክ ይበልጥ አዋቂ የሆነ ፊደል አራሚ ሊያቀርብልዎት ይችላል፣ ይህም Google ፍለጋ የሚጠቀመውን ተመሳሳዩ የፊደል አራሚ ቴክኖሎጂ እንዲጠቀሙ ያስችልዎታል።</translation>
+<translation id="8810891758424955762">BitPop አሳሹ ላይ የሚተይቡትን ለGoogle አገልጋዮች በመላክ ይበልጥ አዋቂ የሆነ ፊደል አራሚ ሊያቀርብልዎት ይችላል፣ ይህም Google ፍለጋ የሚጠቀመውን ተመሳሳዩ የፊደል አራሚ ቴክኖሎጂ እንዲጠቀሙ ያስችልዎታል።</translation>
 <translation id="1880905663253319515">«<ph name="CERTIFICATE_NAME"/>» የእውቅና ማረጋገጫ ይሰረዝ?</translation>
 <translation id="8546306075665861288">የምስል መሸጎጫ</translation>
 <translation id="1168100932582989117">የGoogle ስም አገልጋዮች</translation>
@@ -513,7 +513,6 @@
 <translation id="1046059554679513793">አዪ... ይህ ስም አስቀድሞ ተይዟል!</translation>
 <translation id="3887847548716051874">ይህ ጣቢያ ይህንን ማይክሮፎን እና ይህንን ካሜራ እንዲጠቀም ሁልጊዜ ይፍቀዱለት</translation>
 <translation id="4497097279402334319">ከአውታረ መረቡ ጋር መገናኘት አልተሳካም።</translation>
-<translation id="7342729285348293164">ግላዊነት የተላበሰውን የአሳሽ ባህሪዎችዎን ድር ላይ ለማስቀመጥና ከማንኛውም ኮምፒውተር ላይ ሆነው እነሱን በ<ph name="PRODUCT_NAME"/> ለመድረስ በGoogle መለያዎ <ph name="PRODUCT_NAME"/> ውስጥ ይግቡ።</translation>
 <translation id="2542049655219295786">Google ሠንጠረዥ</translation>
 <translation id="3899879303189199559">ከአንድ ዓመት በላይ ከመስመር ውጪ</translation>
 <translation id="5303618139271450299">ይህ ድረ-ገጽ አልተገኘም</translation>
@@ -667,7 +666,6 @@
         <ph name="PRODUCT_NAME"/>
         አውታረ መረቡን እንዳይደርስበት በሚከለክል ኬላም ሊከሰት ይችላል።</translation>
 <translation id="2159087636560291862">በዚህ አጋጣሚ የእውቅና ማረጋገጫው ኮምፒውተርዎ በሚያምነው ሶስተኛ ወገን አልተረጋገጠም። ማንኛውም ሰው የመረጠው ድር ጣቢያ ነው እያለ የእውቅና ማረጋገጫ ሊፈጥር ይችላል፣ ለዚህም ነው በሚታመን ሶስተኛ ወገን ሊረጋገጥ የሚገባው። ያ ማረጋገጫ በሌለበት የእውቅና ማረጋገጫው ላይ ያለው የማንነት መረጃ ትርጉም አይኖረውም። ስለዚህም <ph name="DOMAIN2"/> ነኝ ከሚል የእራሱ እውቅና ማረጋገጫ ከፈጠረ አጥቂ ይልቅ ከ<ph name="DOMAIN"/> ጋር እየተገናኙ መሆንዎን ማረጋገጥ አይቻልም። ከዚህ ነጥብ አልፈው መቀጠል የለብዎትም።</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> ወይም የGoogle ይለፍ ቃልዎን ወይም የእራስዎ የይለፍ ሐረግዎን ተጠቅመው ውሂብዎን እንዲያመሰጥሩ ይፈልጋል።</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">የእውቅና ማረጋገጫ ባለስልጣን አይደለም</translation>
 <translation id="6099520380851856040">የተከሰተው በ<ph name="CRASH_TIME"/> ላይ</translation>
@@ -687,7 +685,7 @@
 <translation id="9121814364785106365">እንደተሰካ ትር ክፈት</translation>
 <translation id="6292030868006209076">የታሚል ግቤት ስልት (itrans)</translation>
 <translation id="5396126354477659676">በ<ph name="PEPPER_PLUGIN_DOMAIN"/> ላይ ያለው <ph name="PEPPER_PLUGIN_NAME"/> ኮምፒውተርዎን ሊደርስበት ይፈልጋል።</translation>
-<translation id="2128450505147514836">የተያያዘው ፋይል እንዲታረም ወደ Google አገልጋዮች ተሰቅሏል።&lt;br&gt;
+<translation id="7411702401114360503">የተያያዘው ፋይል እንዲታረም ወደ BitPop አገልጋዮች ተሰቅሏል።&lt;br&gt;
         ማሳሰቢያ፦ ለአንድ የግብረ-መልስ ሪፖርት አንድ ፋይል ማያያዝ ይችላሉ (3 ሜባ ገደብ)</translation>
 <translation id="3435896845095436175">አንቃ</translation>
 <translation id="5849294688757445020">የጂፒዩ ቅንብር በሁሉም ገጾች</translation>
@@ -874,7 +872,7 @@ nil</translation>
 <translation id="5120247199412907247">የላቀ ውቅር</translation>
 <translation id="567881659373499783">ስሪት <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">ደህንነቱ የተጠበቀ አሰሳ ግላዊነት መምሪያዎች</translation>
-<translation id="5105859138906591953">የመሣሪያ አሞሌ ዕልባቶችን ወደ Chrome ለማስመጣት የGoogle መለያዎ ውስጥ መግባት አለብዎት። እባክዎ ይግቡና እንደገና ለማስመጣት ይሞክሩ።</translation>
+<translation id="5189894578581316474">የመሣሪያ አሞሌ ዕልባቶችን ወደ BitPop ለማስመጣት የGoogle መለያዎ ውስጥ መግባት አለብዎት። እባክዎ ይግቡና እንደገና ለማስመጣት ይሞክሩ።</translation>
 <translation id="8899851313684471736">አገናኙን በአዲስ &amp;መስኮት ክፈት</translation>
 <translation id="4110342520124362335">ከ<ph name="DOMAIN"/> የሚመጡ ኩኪዎች ታግደዋል።</translation>
 <translation id="2198315389084035571">ቀላል ቻይንኛ</translation>
@@ -942,7 +940,6 @@ nil</translation>
 <translation id="2441392884867482684">ይህ ገጽ አሁን ሙሉ ማያ ገጽ ነው፣ እና የመዳፊትዎ ጠቋሚን ለማሰናከል ይፈልጋል።</translation>
 <translation id="1049376040497900836">የ<ph name="SHORT_PRODUCT_NAME"/> ስሪት የተቀየረባቸው ክስተቶች</translation>
 <translation id="1422780722984745882">በርካታ የተለዩ የአካባቢ ራስጌዎች ደርሰዋል።  ይሄ የኤች ቲ ቲ ፒ ስንጠቃ ጥቃቶችን ለመከላከል ተብሎ አይፈቅድም።</translation>
-<translation id="7787129790495067395">በአሁኑ ጊዜ የይለፍ ሐረግ እየተጠቀሙ ነዎት።  የይለፍ ሐረግዎን ከረሱት Google ዳሽቦርድን ተጠቅመው ውሂብዎን ከGoogle አገልጋዮች ለማጽዳት ማመሳሰልን ዳግም ሊያስጀምሩ ይችላሉ።</translation>
 <translation id="721997939566478439">እሺ፣ አሪፍ</translation>
 <translation id="6612611129072884913">ይህን ገጽ የመነሻ ገጹ ላይ ይሰኩት...</translation>
 <translation id="3380365263193509176">ያልታወቀ ስህተት</translation>
@@ -1067,7 +1064,7 @@ nil</translation>
 <translation id="2955913368246107853">አግኝ አሞሌን ዝጋ</translation>
 <translation id="8864170386249720785">ተንቀሳቃሽ መሣሪያ አቀፍ የኤስ ኤስ ኤል ቅንብሮች፦</translation>
 <translation id="2560788951337264832"><ph name="NUMBER_ZERO"/> ደቂቃዎች ቀርተዋል</translation>
-<translation id="3914942725612686145">አሁን Chrome ውስጥ ገብተዋል። ክፍት ትሮችዎ፣ ዕልባቶችዎ እና የኦምኒቦክስ ውሂብዎ ከGoogle መለያዎ ጋር እየተመሳሰሉ ነው።</translation>
+<translation id="6896530527102607056">አሁን Chrome ውስጥ ገብተዋል። ክፍት ትሮችዎ፣ ዕልባቶችዎ እና የኦምኒቦክስ ውሂብዎ ከFacebook/BitPop መለያዎ ጋር እየተመሳሰሉ ነው።</translation>
 <translation id="5642508497713047">CRL ፈራሚ</translation>
 <translation id="813082847718468539">የጣቢያ መረጃን ይመልከቱ</translation>
 <translation id="127353061808977798">ቅርጸ ቁምፊዎች እና መቀየር</translation>
@@ -1422,7 +1419,7 @@ nil</translation>
 <translation id="7092106376816104">የማይካተቱ ብቅ-ባዮች</translation>
 <translation id="4830475881783902092">የደንበኛ መታወቂያ፦</translation>
 <translation id="4600958291864306415">በማመንጨት ላይ...</translation>
-<translation id="8594787581355215556">እንደ <ph name="USER_EMAIL_ADDRESS"/> ሆነው ገብተዋል። የተመሳሰለውን ውሂብዎ በ<ph name="BEGIN_LINK"/>Google Dashboard <ph name="END_LINK"/> ላይ ያቀናብሩት።</translation>
+<translation id="2669230071943955873">እንደ <ph name="USER_EMAIL_ADDRESS"/> ሆነው ገብተዋል። የተመሳሰለውን ውሂብዎ በ<ph name="BEGIN_LINK"/>BitPop Dashboard <ph name="END_LINK"/> ላይ ያቀናብሩት።</translation>
 <translation id="4338600611020922010">ወደ መነሻ ማያ ገጽ አክል</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> ጭነቱን ሊያጠናቅቅ አልቻለም፣ ግን ከዲስክ ምስሉ መሄዱን ይቀጥላል።</translation>
 <translation id="1952837113524940233">የአዲስ አውታረ መረብ አስከዋኞችን አንቃ</translation>
@@ -1442,7 +1439,7 @@ nil</translation>
 <translation id="4250680216510889253">አይ</translation>
 <translation id="5109044022078737958">ሚያ</translation>
 <translation id="6291953229176937411">በፈላጊ ውስጥ &amp;አሳይ</translation>
-<translation id="8598687241883907630">የGoogle መለያዎትን ያላቅቁ...</translation>
+<translation id="3684341060830149235">የFacebook/BitPop መለያዎትን ያላቅቁ...</translation>
 <translation id="2556718757702023317">«<ph name="FILE_NAME"/>»ን ከመስመር ውጪ ለማስቀመጥ ተጨማሪ የሆነ <ph name="TOTAL_FILE_SIZE"/> የማከማቻ ቦታ ነጻ ማስለቀቅ አለብዎት፦<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>ከአሁን በኋላ ከመስመር ውጪ ለመድረስ የማያስፈልጉዎትን ፋይሎች ይንቀሉ<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>ፋይሎችን ከውርዶች አቃፊዎ ይሰርዙ<ph name="MARKUP_5"/></translation>
@@ -1529,7 +1526,7 @@ nil</translation>
 <translation id="4181898366589410653">በአገልጋዩ ሰርቲፊኬት ውስጥ ምንም የመሻሪያ ዘዴ አልተገኘም።</translation>
 <translation id="1515163294334130951">አስጀምር</translation>
 <translation id="6914291514448387591"><ph name="PLUGIN_NAME"/> ለማሄድ የእርስዎ ፍቃድ ያስፈልገዋል።</translation>
-<translation id="1123316951456119629">የGoogle መለያዎን ከ<ph name="PRODUCT_NAME"/> በማላቀቅ በዚህ ኮምፒውተር ላይ ያለው ውሂብ እዛው እንዳለ ይቆያል፣ ግን ከአሁን በኋላ የሚደረጉ ለውጦች ከGoogle መለያዎ ጋር አይመሳሰልም። አስቀድሞ በGoogle መለያዎ ላይ የተከማቸ ውሂብ <ph name="BEGIN_LINK"/>Google ዳሽቦርድ<ph name="END_LINK"/>ን ተጠቅመው እስኪያስወግዱት ድረስ እዛው እንዳለ ይቆያል።</translation>
+<translation id="3144050057163527741">የBitPop መለያዎን ከ<ph name="PRODUCT_NAME"/> በማላቀቅ በዚህ ኮምፒውተር ላይ ያለው ውሂብ እዛው እንዳለ ይቆያል፣ ግን ከአሁን በኋላ የሚደረጉ ለውጦች ከGoogle መለያዎ ጋር አይመሳሰልም። አስቀድሞ በGoogle መለያዎ ላይ የተከማቸ ውሂብ <ph name="BEGIN_LINK"/>Google ዳሽቦርድ<ph name="END_LINK"/>ን ተጠቅመው እስኪያስወግዱት ድረስ እዛው እንዳለ ይቆያል።</translation>
 <translation id="8705331520020532516">መለያ ቁጥር</translation>
 <translation id="1665770420914915777">የአዲሱን ትር ገጽ ተጠቀም</translation>
 <translation id="5456409301717116725">ይህ ቅጥያ የቁልፍ ፋይል «<ph name="KEY_PATH"/>»ን ያካትታል። ይህንን ማድረግ ላይፈልጉ ይችላሉ።</translation>
@@ -1745,8 +1742,8 @@ nil</translation>
 <translation id="7434823369735508263">የዩናይትድ ኪንግደም ድቮራክ ቁልፍ ሰሌዳ</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> ቀናት</translation>
 <translation id="8825366169884721447">ይህ ቅጥያ የጥያቄው ርዕስ «<ph name="HEADER_NAME"/>»ን መቀየር አልተሳካለትም ምክንያቱም ለውጡ ከሌላ ቅጥያ (<ph name="EXTENSION_NAME"/>) ጋር ስለተጋጨ።</translation>
-<translation id="5308845175611284862">የ<ph name="PRODUCT_NAME"/> ማመሳል ውሂብዎን (እንደ ዕልባቶች እና ቅንብሮች ያሉ) በኮምፒውተሮችዎን መካከል ማጋራት ቀላል ያደርገዋል።
-          <ph name="PRODUCT_NAME"/> በGoogle መለያዎ ሲገቡ ውሂብዎን መስመር ላይ ወደ Google በማከማቸት ውሂብዎን ያመሳስለዋል።</translation>
+<translation id="291445075019511713">የ<ph name="PRODUCT_NAME"/> ማመሳል ውሂብዎን (እንደ ዕልባቶች እና ቅንብሮች ያሉ) በኮምፒውተሮችዎን መካከል ማጋራት ቀላል ያደርገዋል።
+          <ph name="PRODUCT_NAME"/> በBitPop መለያዎ ሲገቡ ውሂብዎን መስመር ላይ ወደ BitPop በማከማቸት ውሂብዎን ያመሳስለዋል።</translation>
 <translation id="1707463636381878959">ይህን አውታረ መረብ ለሌሎች ተጠቃሚዎች ያጋሩ</translation>
 <translation id="3024663005179499861">የተሳሳተ የመምሪያ አይነት</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -1944,7 +1941,7 @@ nil</translation>
 <translation id="1601560923496285236">ተግብር</translation>
 <translation id="2390045462562521613">ይህን አውታረ መረብ እርሳ</translation>
 <translation id="3348038390189153836">ተነቃይ መሣሪያ ተገኝቷል</translation>
-<translation id="8005540215158006229">በቃ Chrome ዝግጁ ሊሆን ነው።</translation>
+<translation id="3674182693516842999">በቃ BitPop ዝግጁ ሊሆን ነው።</translation>
 <translation id="1666788816626221136">ከማናቸውም ሌሎች መደቦች ጋር የማይገጣጠሙ ሰርቲፊኬቶች በፋይሉ ላይ አሉዎት፦</translation>
 <translation id="5698727907125761952">ይፋዊ አርቲስት</translation>
 <translation id="4821935166599369261">&amp;መገለጫ መስራት ነቅቷል</translation>
@@ -2097,7 +2094,7 @@ nil</translation>
 <translation id="748138892655239008">የሰርቲፊኬት መሰረታዊ እገዳዎች</translation>
 <translation id="457386861538956877">ተጨማሪ...</translation>
 <translation id="9210991923655648139">ለስክሪፕቱ ተደራሽ የሆኑ፦</translation>
-<translation id="4152177296285305182">የይለፈ ሐረግዎ ያለው ሰው ብቻ ነው የተመሰጠረውን ውሂብዎን ማግኘት የሚችለው። የይለፍ ሐረጉ ወደ Google አይላክም ወይም በእሱም አይከማችም። የይለፍ ሐረግዎን ከረሱት ማመሳሰልን ዳግም ማስጀመር አለብዎት።</translation>
+<translation id="8792136381897173209">የይለፈ ሐረግዎ ያለው ሰው ብቻ ነው የተመሰጠረውን ውሂብዎን ማግኘት የሚችለው። የይለፍ ሐረጉ ወደ BitPop አይላክም ወይም በእሱም አይከማችም። የይለፍ ሐረግዎን ከረሱት ማመሳሰልን ዳግም ማስጀመር አለብዎት።</translation>
 <translation id="1950295184970569138">* የGoogle መገለጫ ፎቶ (በመጫን ላይ)</translation>
 <translation id="8063491445163840780">ትር 4ን ያገብራል</translation>
 <translation id="5473544328731861874">intent አስወግድ</translation>
@@ -2256,7 +2253,6 @@ nil</translation>
 <translation id="2563185590376525700">እንቁራሪት</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> ከ<ph name="NETWORK_ID"/> ጋር ሊገናኝ አልቻለም። እባክዎ ሌላ አውታረ መረብ ይሞክሩ ወይም እንደገና ይሞክሩ።</translation>
 <translation id="2086712242472027775">መለያዎ በ<ph name="PRODUCT_NAME"/> ላይ አይሰራም። እባክዎ የጎራዎ አስተዳዳሪውን ያግኙ ወይም ለመግባት መደበኛ የሆነ የGoogle መለያ ይጠቀሙ።</translation>
-<translation id="1373074393717692190">ግላዊነት የተላበሰው የአሳሽ ባህሪያትዎ ድሩ ላይ ለማስቀመጥ እና ከማንኛውም ተንቀሳቃሽ መሣሪያ ላይ ሆነው ከ<ph name="PRODUCT_NAME"/> ለመድረስ በGoogle መለያዎ ወደ <ph name="PRODUCT_NAME"/> ይግቡ። ወደሚወዷቸው የGoogle አገልግሎቶች በራስ-ሰር እንዲገቡም ይደረጋሉ።</translation>
 <translation id="7222232353993864120">ኢሜይል አድራሻ</translation>
 <translation id="2128531968068887769">ቤተኛ ደንበኛ</translation>
 <translation id="7175353351958621980">የተጫነው ከ፦</translation>
@@ -2509,7 +2505,7 @@ nil</translation>
 <translation id="1752977958630076881">ከአሳሼ እስክወጣ ድረስ ብቻ አካባቢያዊ ውሂብ አስቀምጥ</translation>
 <translation id="7853202427316060426">እንቅስቃሴ</translation>
 <translation id="8550022383519221471">የማመሳሰል አገልግሎት ለጎራዎ አይገኝም።</translation>
-<translation id="1436238710092600782">የGoogle መለያ ፍጠር</translation>
+<translation id="8612897762498195031">የBitPop መለያ ፍጠር</translation>
 <translation id="3355823806454867987">የተኪ ቅንብሮችን በመቀየር ላይ...</translation>
 <translation id="2882324896611949356">የGoogle እውቂያዎች ከመተግበሪያው ዝርዝሩ ሆነው ሲታዩ እነሱን ማውረድ ያነቃል።</translation>
 <translation id="4780374166989101364">የሙከራ ቅጥያ ኤ ፒ አይዎችን ያነቃል። ማዕከለ-ቅጥያው የሙከራ ቅጥያ ኤ ፒ አይዎችን የሚጠቀሙ ቅጥያዎች እንዲሰቅሉ እንደማይፈቅድልዎት ልብ ይበሉ።</translation>
@@ -2610,7 +2606,7 @@ nil</translation>
 <translation id="8314066201485587418">ከአሳሼ ስወጣ ኩኪዎችን እና የሌላ ጣቢያ ውሂብን ያስወግዱ</translation>
 <translation id="4094105377635924481">በቡድን ማስቀመጥን ወደ የትር አገባበ ምናሌ አክል</translation>
 <translation id="765676359832457558">የላቁ ቅንብሮችን ደብቅ...</translation>
-<translation id="7626032353295482388">ወደ Chrome እንኳን ደህና መጡ</translation>
+<translation id="185658551912723674">ወደ BitPop እንኳን ደህና መጡ</translation>
 <translation id="8655295600908251630">ሰርጥ</translation>
 <translation id="8250690786522693009">ላቲን</translation>
 <translation id="2119721408814495896">የ<ph name="CLOUD_PRINT_NAME"/> አገናኙ Microsoft XML Paper Specification Essentials ጥቅል እንዲጫን ይፈልጋል።</translation>
@@ -2669,7 +2665,7 @@ nil</translation>
 <translation id="7255513090217522383">በመላክ ላይ</translation>
 <translation id="2435457462613246316">የይለፍ ቃል አሳይ</translation>
 <translation id="132101382710394432">የተመረጡ አውታረ መረቦች...</translation>
-<translation id="532360961509278431">&quot;$1&quot;: $2ን መክፈት አልተቻለም</translation>
+<translation id="532360961509278431">"$1": $2ን መክፈት አልተቻለም</translation>
 <translation id="1973335181906896915">የመለያ ቁጥር መስጠት ላይ ስህተት</translation>
 <translation id="5438653034651341183">የአሁኑ ቅጽበታዊ ገጽ እይታን ያካትቱ፦</translation>
 <translation id="8096505003078145654">ተኪ አገልጋይ በኮምፒውተርዎ እና በሌሎች አገልጋዮች መካከል እንደ አገናኝ የሚያገለግል አገልጋይ ነው። አሁን ስርዓትዎ ተኪ እንዲጠቀም ተዋቅሯል፣ ግን
@@ -2999,7 +2995,7 @@ nil</translation>
 <translation id="9072684888578654899">&lt;p&gt;
           በሌሎች መሣሪያዎችዎ ላይ በChrome ውስጥ የከፈቷቸውን ትሮች እዚህ ይታያሉ።
           &lt;/p&gt;
-          &lt;a href=&quot;#enablesync&quot;&gt;
+          &lt;a href="#enablesync"&gt;
           ማመሳሰልን ያንቁ።
           &lt;/p&gt;</translation>
 <translation id="889901481107108152">ይቅርታ፣ ይህ ሙከራ ለመሣሪያ ስርዓትዎ አይገኝም።</translation>
@@ -3149,7 +3145,7 @@ nil</translation>
 <translation id="6007237601604674381">መውሰድ አልተሳካም። <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">በመጠቅለል ጊዜ ጊዜያዊ ዚፕ ፋይል መፍጠር አልተሳካም።</translation>
 <translation id="1881456419707551346">የግንኙነት ዝርዝሮች</translation>
-<translation id="1064912851688322329">የGoogle መለያዎትን ግንኙነት ያቋርጡ</translation>
+<translation id="1175819364738375266">የFacebook/BitPop መለያዎትን ግንኙነት ያቋርጡ</translation>
 <translation id="1294298200424241932">የእምነት ቅንብሮችን ያርትዑ፦</translation>
 <translation id="1407135791313364759">ሁሉንም ክፈት</translation>
 <translation id="1434928358870966081">የተጣደፉ 2-ል ሸራዎችን ያሰናክሉ</translation>
@@ -3354,7 +3350,7 @@ nil</translation>
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">ትክክለኛ URL መሆን ይኖርበታል</translation>
 <translation id="3464726836683998962">የተንቀሳቃሽ ስልክ ውሂብ ዝውውርን አሰናክል</translation>
-<translation id="8986494364107987395">የአጠቃቀም ስታስቲክስ እና የብልሽት ሪፖርቶች በራስ ሰር ወደ Google ይላኩ።</translation>
+<translation id="7133428520955276418">የአጠቃቀም ስታስቲክስ እና የብልሽት ሪፖርቶች በራስ ሰር ወደ House of Life ይላኩ።</translation>
 <translation id="7070714457904110559">የምድራዊ አካባቢ ባህሪው ላይ የሙከራ ቅጥያዎችን ያነቃል። የስርዓተ ክወና አካባቢ ኤ ፒ አይዎች (ካሉ) እና የበለጠ ትክክለኛ ቦታ ጠቋሚነትን ለማቅረብ ተጨማሪ የአካባቢያዊ አውታረ መረብ ውቅር መረጃ ውሂብ ለGoogle አካባቢ አገልግሎት መላክን ያካትታል።</translation>
 <translation id="6701535245008341853">መገለጫውን ማግኘት አልተቻለም።</translation>
 <translation id="8303655282093186569">የፒንዪን ግቤት ቅንብሮች</translation>
@@ -3390,7 +3386,7 @@ nil</translation>
 <translation id="4762295713053835808">የግል ነገሮች</translation>
 <translation id="3445092916808119474">ዋናው አድርገው</translation>
 <translation id="6374100501221763867">በሃርድዌር የተጣደፈ የቪዲዮ ማንነትን የማያሳውቅ መግለጥን ያሰናክሉ።</translation>
-<translation id="7477347901712410606">የይለፍ ሐረግዎን ከረሱ ማመሳሰልን ያቁሙ እና በ<ph name="BEGIN_LINK"/>Google Dashboard <ph name="END_LINK"/> በኩል ዳግም ያስጀምሩ።</translation>
+<translation id="1257410854647617646">የይለፍ ሐረግዎን ከረሱ ማመሳሰልን ያቁሙ እና በ<ph name="BEGIN_LINK"/>BitPop Dashboard <ph name="END_LINK"/> በኩል ዳግም ያስጀምሩ።</translation>
 <translation id="3085235303151103497">ለተጠቀለሉ መተግበሪያዎች ማረምን ያንቁ።</translation>
 <translation id="2645575947416143543">የራሱን ሰርቲፊኬቶች የሚፈጥር ድርጅት ውስጥ የሚሰሩ ከሆነና እንዲህ አይነት ሰርቲፊኬት በመጠቀም ከድርጅቱ ውስጠኛ ድረ-ገጽ ጋር መገናኘት እየሞከሩ ከሆነ፣ ይህን ችግር ደህንነቱ በተጠበቀ ሁኔታ ሊፈቱት ይችሉ ይሆናል። የድርጅትዎን ‹‹ስርወ-ሰርቲፊኬት›› ማስመጣት ይችላሉ፣ ከዚያ በኋላ በድርጅትዎ የተሰጡ ወይም የተረጋገጡ ሰርቲፊኬቶች አመኔታ ይኖራቸዋል፤ ይህን ስህተትም በሚቀጥለው ጊዜ ከውስጠኛ ድረ-ገጽ ጋር ለመገናኘት ሲሞከሩ አያያቱም። ወደ ኮምፒውተርዎ ስርወ-ሰርቲፊኬት ለመጨመር ርዳታ ከፈለጉ የድርጅትዎን የእገዛ ማዕከል ይገናኙ።</translation>
 <translation id="1056898198331236512">ማስጠንቀቂያ</translation>
@@ -3592,7 +3588,7 @@ nil</translation>
 <translation id="4971925105143343452">ከፊል</translation>
 <translation id="3454157711543303649">ማግበር ተጠናቋል</translation>
 <translation id="884923133447025588">ምንም የመሻሪያ ዘዴ አልተገኘም።</translation>
-<translation id="7801746894267596941">የይለፍ ሐረግዎን ያለው ሰው ብቻ ነው የተመሰጠረውን ውሂብዎን ማንበብ የሚችለው። የይለፍ ሐረጉ ለGoogle አይላክም ወይም በእሱ አይከማችምም። የይለፍ ሐረግዎን ከረሱ ይህንን ማድረግ ይኖርብዎታል፦</translation>
+<translation id="2077681924461579449">የይለፍ ሐረግዎን ያለው ሰው ብቻ ነው የተመሰጠረውን ውሂብዎን ማንበብ የሚችለው። የይለፍ ሐረጉ ለBitPop አይላክም ወይም በእሱ አይከማችምም። የይለፍ ሐረግዎን ከረሱ ይህንን ማድረግ ይኖርብዎታል፦</translation>
 <translation id="5406835729608468430">ይመልከቱ በ…</translation>
 <translation id="291886813706048071">ከዚህ ሆነው በ<ph name="SEARCH_ENGINE"/> መፈለግ ይቻላሉ</translation>
 <translation id="556042886152191864">አዘራር</translation>
@@ -3776,7 +3772,7 @@ nil</translation>
 <translation id="8948393169621400698">ሁልጊዜ በ<ph name="HOST"/> ላይ ተሰኪዎች ፍቀድ</translation>
 <translation id="6527303717912515753">አጋራ</translation>
 <translation id="4285498937028063278">ይንቀሉ</translation>
-<translation id="2588322182880276190">የChrome አርማ</translation>
+<translation id="193954205383164322">የBitPop አርማ</translation>
 <translation id="7893008570150657497">የኮምፒውተርዎን ፎቶዎች፣ ሙዚቃ እና ሌላ ሚዲያ ይደርሳል</translation>
 <translation id="5449624072515809082">በትየባ ጊዜ ራስ-ማረምን ያበራል። የሚመሳሰል ፊደል ማረም ከዚህ ባህሪ ጋር ተኳሃኝ አይደለም።</translation>
 <translation id="8291808604460602261">Web Intents መተግበሪያዎቼን እንዳገናኝ እንዲያስችለኝ ፍቀድለት።</translation>
@@ -4121,7 +4117,7 @@ nil</translation>
 <translation id="3021678814754966447">የፍሬም ሶርስ &amp;አሳይ</translation>
 <translation id="8601206103050338563">TLS WWW የተገልጋይ ማረጋገጫ</translation>
 <translation id="1692799361700686467">ከበርካታ ጣቢያዎች የሚመጡ ኩኪዎች ተፈቅደዋል።</translation>
-<translation id="5187295959347858724">አሁን ወደ <ph name="SHORT_PRODUCT_NAME"/> ገብተዋል። ዕልባቶችዎ፣ ታሪክዎ እና ሌሎች ቅንብሮችዎ ከGoogle መለያዎ ጋር እየተመሳሰሉ ናቸው።</translation>
+<translation id="6928105098560478094">አሁን ወደ <ph name="SHORT_PRODUCT_NAME"/> ገብተዋል። ዕልባቶችዎ፣ ታሪክዎ እና ሌሎች ቅንብሮችዎ ከBitPop መለያዎ ጋር እየተመሳሰሉ ናቸው።</translation>
 <translation id="7381706763856392587">«<ph name="FILENAME"/>» ተሰርዟል</translation>
 <translation id="529232389703829405"><ph name="DATE"/> ላይ <ph name="DATA_AMOUNT"/> የውሂብ መጠን ገዝተዋል</translation>
 <translation id="7419106976560586862">የመገለጫ ዱካ</translation>
@@ -4190,7 +4186,7 @@ nil</translation>
 <translation id="6692173217867674490">መጥፎ የይለፍ ሐረግ</translation>
 <translation id="5550431144454300634">በራስ-ሰር ትክክል ግቤት</translation>
 <translation id="3308006649705061278">ድርጅታዊ መስፈርት (OU)</translation>
-<translation id="8912362522468806198">የGoogle መለያ</translation>
+<translation id="9034203691147880734">የBitPop መለያ</translation>
 <translation id="4839847978919684242"><ph name="SELCTED_FILES_COUNT"/> ንጥሎች ተመርጠዋል</translation>
 <translation id="4443536555189480885">&amp;እገዛ</translation>
 <translation id="6993309531105463648">ለአንድ እና ሁለት አሳሽ / መተግበሪያ መስኮቶች የራስ-ሰር መስኮት አቀማመጥን ያሰናክላል።</translation>
@@ -4569,7 +4565,7 @@ nil</translation>
 <translation id="1177437665183591855">ያልታወቀ የአገልጋይ ሰርቲፊኬት ስህተት</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> ካሜራዎን እና ማይክሮፎንዎን ሊመጠቀም ይፈልጋል።</translation>
 <translation id="8467473010914675605">የኮሪያኛ ግቤት ስልት</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> ውሂብዎን ደህንነቱ በተጠበቀ ሁኔታ ከGoogle መለያዎ ጋር ያመሳስለዋል። ሁሉ ነገር እንደተመሳሰሉ ያቆዩ ወይም የሚመሳሰሉ የውሂብ አይነቶችን እና ምስጠራ ቅንብሮችን ያብጁ።</translation>
+<translation id="7938022885346429483"><ph name="PRODUCT_NAME"/> ውሂብዎን ደህንነቱ በተጠበቀ ሁኔታ ከBitPop መለያዎ ጋር ያመሳስለዋል። ሁሉ ነገር እንደተመሳሰሉ ያቆዩ ወይም የሚመሳሰሉ የውሂብ አይነቶችን እና ምስጠራ ቅንብሮችን ያብጁ።</translation>
 <translation id="2639739919103226564">ሁኔታ፦</translation>
 <translation id="824543159844843373">አስጀማሪ ንጥል 3 አግብር</translation>
 <translation id="6923900367903210484">የቅጂ መብት</translation>
@@ -4597,7 +4593,7 @@ nil</translation>
 <translation id="2101797668776986011">Pepper 3D</translation>
 <translation id="1581962803218266616">በፈላጊ ውስጥ አሳይ</translation>
 <translation id="9100765901046053179">የላቁ ቅንብሮች</translation>
-<translation id="203168018648013061">የማመሳሰል ስህተት፦ እባክዎ ማመሳሰልን በGoogle Dashboard  በኩል ዳግም ያስጀምሩት።</translation>
+<translation id="2936690273131526650">የማመሳሰል ስህተት፦ እባክዎ ማመሳሰልን በBitPop Dashboard  በኩል ዳግም ያስጀምሩት።</translation>
 <translation id="1405126334425076373">የመዳፊት ጠቋሚ</translation>
 <translation id="6671493224572088110"><ph name="VIDEO_NAME"/>ን ይመልከቱ</translation>
 <translation id="6096326118418049043">X.500 ስም</translation>
@@ -4717,7 +4713,7 @@ nil</translation>
 <translation id="2050339315714019657">በቁመት</translation>
 <translation id="6978839998405419496">ከ<ph name="NUMBER_ZERO"/> ቀን በፊት</translation>
 <translation id="8273027367978594412">ሲነቃ አንድ እንግዳ ተጠቃሚ በዴስክቶፕ Chrome ላይ ይገኛል።</translation>
-<translation id="8188199528179562676">የGoogle መለያዎን ከ<ph name="PRODUCT_NAME"/> በማላቀቅ በዚህ ተንቀሳቃሽ መሣሪያ ላይ ያለው ውሂብዎ እዛው እንዳለ ይቀራል፣ ግን ከአሁን በኋላ የሚደረጉ ለውጦች ከGoogle መለያዎ ጋር አይመሳሰልም። አስቀድሞ በGoogle መለያዎ ላይ የተከማቸ ውሂብ <ph name="BEGIN_LINK"/>Google ዳሽቦርድ<ph name="END_LINK"/>ን ተጠቅመው እስኪያስወግዱት ድረስ እዛው እንዳለ ይቆያል።</translation>
+<translation id="3972854587947107012">የBitPop መለያዎን ከ<ph name="PRODUCT_NAME"/> በማላቀቅ በዚህ ተንቀሳቃሽ መሣሪያ ላይ ያለው ውሂብዎ እዛው እንዳለ ይቀራል፣ ግን ከአሁን በኋላ የሚደረጉ ለውጦች ከGoogle መለያዎ ጋር አይመሳሰልም። አስቀድሞ በGoogle መለያዎ ላይ የተከማቸ ውሂብ <ph name="BEGIN_LINK"/>Google ዳሽቦርድ<ph name="END_LINK"/>ን ተጠቅመው እስኪያስወግዱት ድረስ እዛው እንዳለ ይቆያል።</translation>
 <translation id="8261490674758214762">እነዚህን ማድረግ ይችላሉ፦</translation>
 <translation id="5112577000029535889">&amp;የዴቬሎፐር መሳሪያዎች</translation>
 <translation id="2301382460326681002">የቅጥያ ስርወ ማውጫ ልክ አይደለም።</translation>

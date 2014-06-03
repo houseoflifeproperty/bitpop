@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="sv">
 <translation id="6879617193011158416">Växla bokmärkesfältet</translation>
@@ -66,7 +66,7 @@ Psst! Nästa gång kanske inkognitoläge <ph name="SHORTCUT_KEY"/> kan vara någ
 <translation id="4940047036413029306">Citat</translation>
 <translation id="1497897566809397301">Tillåt att lokala data sparas (rekommenderas)</translation>
 <translation id="3275778913554317645">Öppna som fönster</translation>
-<translation id="4553117311324416101">Google har påträffat skadlig programvara som kan installeras på datorn om du fortsätter. Om du har besökt den här webbplatsen tidigare eller om du litar på den kanske den har angripits av en hackare helt nyligen. Du bör inte besöka webbplatsen just nu. Försök istället imorgon eller välj en annan webbplats.</translation>
+<translation id="8198393002783366468">BitPop har påträffat skadlig programvara som kan installeras på datorn om du fortsätter. Om du har besökt den här webbplatsen tidigare eller om du litar på den kanske den har angripits av en hackare helt nyligen. Du bör inte besöka webbplatsen just nu. Försök istället imorgon eller välj en annan webbplats.</translation>
 <translation id="8867568208303837180">Skickar ...</translation>
 <translation id="509988127256758334">Sö&amp;k efter:</translation>
 <translation id="1420684932347524586">Oj! Det gick inte att generera en slumpmässig privat RSA-nyckel.</translation>
@@ -232,7 +232,7 @@ Psst! Nästa gång kanske inkognitoläge <ph name="SHORTCUT_KEY"/> kan vara någ
 <translation id="1818606096021558659">Sida</translation>
 <translation id="1549045574060481141">Bekräfta hämtning</translation>
 <translation id="5388588172257446328">Användarnamn:</translation>
-<translation id="1657406563541664238">Hjälp till att göra <ph name="PRODUCT_NAME"/> bättre genom att automatiskt skicka användningsstatistik och felrapporter till Google</translation>
+<translation id="5757566435961687655">Hjälp till att göra <ph name="PRODUCT_NAME"/> bättre genom att automatiskt skicka användningsstatistik och felrapporter till House of Life</translation>
 <translation id="7982789257301363584">Nätverk</translation>
 <translation id="2271281383664374369">Begäranden från tillägg till den här webbadressen har stängts av tillfälligt.</translation>
 <translation id="8528962588711550376">Inloggning sker</translation>
@@ -248,7 +248,7 @@ Psst! Nästa gång kanske inkognitoläge <ph name="SHORTCUT_KEY"/> kan vara någ
 <translation id="1776883657531386793"><ph name="OID"/>: <ph name="INFO"/></translation>
 <translation id="1510030919967934016">Sidan har förhindrats från att spåra din plats.</translation>
 <translation id="8848519885565996859">Användardefinierad ram för adresslänk</translation>
-<translation id="4640525840053037973">Logga in med ditt Google-konto</translation>
+<translation id="4550196943338771146">Logga in med ditt BitPop-konto</translation>
 <translation id="5255315797444241226">Den angivna lösenfrasen är felaktig.</translation>
 <translation id="762917759028004464">Standardwebbläsaren är för närvarande <ph name="BROWSER_NAME"/>.</translation>
 <translation id="9213479837033539041"><ph name="NUMBER_MANY"/> sekunder kvar</translation>
@@ -298,8 +298,8 @@ Psst! Nästa gång kanske inkognitoläge <ph name="SHORTCUT_KEY"/> kan vara någ
           och klicka sedan på
           <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Lägg till sökmotor</translation>
-<translation id="4043223219875055035">Logga in med ditt Google-konto och tillåt att appar synkroniserar inställningar och tillhandahåller andra skräddarsydda tjänster.</translation>
-<translation id="6868050610674841964">Om du loggar in synkroniseras dina data med Google-kontot så att du kan använda dina bokmärken, din historik och andra inställningar på vilken enhet som helst.</translation>
+<translation id="7333287746989217896">Logga in med ditt BitPop-konto och tillåt att appar synkroniserar inställningar och tillhandahåller andra skräddarsydda tjänster.</translation>
+<translation id="5804885986789001150">Om du loggar in synkroniseras dina data med Facebook/BitPop-kontot så att du kan använda dina bokmärken, din historik och andra inställningar på vilken enhet som helst.</translation>
 <translation id="5498951625591520696">Det går inte att nå servern.</translation>
 <translation id="1621207256975573490">Spara &amp;ram som...</translation>
 <translation id="4681260323810445443">Du har inte behörighet att öppna webbsidan <ph name="URL"/>. Du måste eventuellt logga in först.</translation>
@@ -422,7 +422,7 @@ Psst! Nästa gång kanske inkognitoläge <ph name="SHORTCUT_KEY"/> kan vara någ
 <translation id="8194465509832052438">Konfigurera kommandona</translation>
 <translation id="4422347585044846479">Redigera bokmärke för den här sidan</translation>
 <translation id="2452539774207938933">Byt till användare: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome kan ge smartare stavningskontroll genom att skicka det som du skriver i webbläsaren till Googles servrar så att du kan använda samma stavningsteknik som används i Googles webbsökning.</translation>
+<translation id="8810891758424955762">BitPop kan ge smartare stavningskontroll genom att skicka det som du skriver i webbläsaren till Googles servrar så att du kan använda samma stavningsteknik som används i Googles webbsökning.</translation>
 <translation id="1880905663253319515">Vill du ta bort certifikatet <ph name="CERTIFICATE_NAME"/>?</translation>
 <translation id="8546306075665861288">Cacheminne för bilder</translation>
 <translation id="1168100932582989117">Googles namnservrar</translation>
@@ -443,7 +443,7 @@ Psst! Nästa gång kanske inkognitoläge <ph name="SHORTCUT_KEY"/> kan vara någ
 <translation id="8879284080359814990">&amp;Visa som flik</translation>
 <translation id="7537536606612762813">Obligatorisk</translation>
 <translation id="4520722934040288962">Välj via öppnare</translation>
-<translation id="515466457039582167">Visar tillägget &quot;skriptmärken&quot; i adressfältet istället för åtgärderna för sidan.</translation>
+<translation id="515466457039582167">Visar tillägget "skriptmärken" i adressfältet istället för åtgärderna för sidan.</translation>
 <translation id="3873139305050062481">&amp;Granska komponent</translation>
 <translation id="7445762425076701745">Det går inte att fastställa identiteten hos servern som du är ansluten till. Servernamnet som du angav vid anslutningen är bara giltigt inom ditt nätverk och externa certifikatutfärdare kan inte fastställa dess ägarskap. Vissa certifikatutfärdare utfärdar certifikat oavsett namn och därför går det inte att säkerställa att du är ansluten till den avsedda webbplatsen och inte till en skadlig server.</translation>
 <translation id="1556537182262721003">Det gick inte att flytta tilläggskatalogen till profilen.</translation>
@@ -511,7 +511,6 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="1046059554679513793">Det här namnet används redan!</translation>
 <translation id="3887847548716051874">Tillåt alltid att webbplatsen använder den här mikrofonen och kameran</translation>
 <translation id="4497097279402334319">Det går inte att ansluta till nätverket.</translation>
-<translation id="7342729285348293164">Logga in i <ph name="PRODUCT_NAME"/> med ditt Google-konto om du vill spara dina personliga webbläsarfunktioner på webben. Då kommer du åt dem i <ph name="PRODUCT_NAME"/> på valfri dator. Du kommer också att loggas in automatiskt på dina favorittjänster från Google.</translation>
 <translation id="2542049655219295786">Tabell i Google Dokument</translation>
 <translation id="3899879303189199559">Offline i mer än ett år</translation>
 <translation id="5303618139271450299">Webbsidan kan inte hittas</translation>
@@ -658,7 +657,6 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="773426152488311044">Du är för närvarande den enda som använder <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="2042078858148122628">Det går inte att hitta servern på <ph name="HOST_NAME"/> eftersom DNS-sökningen misslyckades. DNS är den webbtjänst som översätter webbplatsnamnet till dess Internetadress. Felet beror vanligtvis på att det inte finns någon anslutning till Internet eller att nätverket inte konfigurerats på rätt sätt. Det kan också orsakas av att en DNS-server inte svarar eller att en brandvägg hindrar <ph name="PRODUCT_NAME"/> från att ansluta till nätverket.</translation>
 <translation id="2159087636560291862">I det här fallet har certifikatet inte verifierats av en tredje part som din dator litar på. Vem som helst kan skapa ett certifikat som påstår sig vara från vilken webbplats som helst, därför är det viktigt att certifikatet är verifierat av en betrodd tredje part. Utan den verifieringen är identitetsinformationen i certifikatet meningslös. Därför går det inte att verifiera att du kommunicerar med <ph name="DOMAIN"/> och inte med en angripare som har skapat ett eget certifikat som påstår att det är <ph name="DOMAIN2"/>. Du bör inte fortsätta.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> kräver att du krypterar dina data med antingen ditt Google-lösenord eller din egen lösenfras.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Är inte en certifikatutfärdare</translation>
 <translation id="6099520380851856040">Inträffade <ph name="CRASH_TIME"/></translation>
@@ -678,7 +676,7 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="9121814364785106365">Öppna som en fast flik</translation>
 <translation id="6292030868006209076">Inmatningsmetod för tamil (itrans)</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_NAME"/> på <ph name="PEPPER_PLUGIN_DOMAIN"/> vill ha åtkomst till datorn.</translation>
-<translation id="2128450505147514836">Den bifogade filen överförs till Googles servrar för felsökning.&lt;br&gt;
+<translation id="7411702401114360503">Den bifogade filen överförs till BitPops servrar för felsökning.&lt;br&gt;
         Obs! Du kan bifoga en fil per feedbackrapport (gräns: 3 MB)</translation>
 <translation id="3435896845095436175">Aktivera</translation>
 <translation id="5849294688757445020">GPU-sammansättning på alla sidor</translation>
@@ -863,7 +861,7 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="5120247199412907247">Avancerad konfiguration</translation>
 <translation id="567881659373499783">Version <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Sekretesspolicy för Säker webbsökning</translation>
-<translation id="5105859138906591953">Du måste logga in på ditt Google-konto om du ska kunna importera bokmärken från Verktygsfält till Chrome. Logga in och försök importera igen.</translation>
+<translation id="5189894578581316474">Du måste logga in på ditt Google-konto om du ska kunna importera bokmärken från Verktygsfält till BitPop. Logga in och försök importera igen.</translation>
 <translation id="8899851313684471736">Öppna länk i nytt f&amp;önster</translation>
 <translation id="4110342520124362335">Cookies från <ph name="DOMAIN"/> blockeras.</translation>
 <translation id="2198315389084035571">kinesiska (förenklad)</translation>
@@ -932,7 +930,6 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="1049376040497900836">Antalet gånger versionen av <ph name="SHORT_PRODUCT_NAME"/> ändrades</translation>
 <translation id="1422780722984745882">Flera rubriker med Location togs emot. Eftersom vi vill förhindra attacker
         med delade HTTP-svar är detta inte tillåtet.</translation>
-<translation id="7787129790495067395">Du använder en lösenfras. Om du har glömt din lösenfras kan du återställa synkronisering och rensa dina data från Googles servrar med Google Översikt.</translation>
 <translation id="721997939566478439">Ok, bra</translation>
 <translation id="6612611129072884913">Fäst den här sidan på startskärmen ...</translation>
 <translation id="3380365263193509176">Okänt fel</translation>
@@ -1057,7 +1054,7 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="2955913368246107853">Stäng sökfältet</translation>
 <translation id="8864170386249720785">SSL-inställningarna för hela den mobila enheten:</translation>
 <translation id="2560788951337264832"><ph name="NUMBER_ZERO"/> minuter kvar</translation>
-<translation id="3914942725612686145">Nu är du inloggad i Chrome. Dina öppna flikar, bokmärken och uppgifter från adressfältet synkroniseras med ditt Google-konto.</translation>
+<translation id="6896530527102607056">Nu är du inloggad i Chrome. Dina öppna flikar, bokmärken och uppgifter från adressfältet synkroniseras med ditt Facebook/BitPop-konto.</translation>
 <translation id="5642508497713047">CRL-signerare</translation>
 <translation id="813082847718468539">Visa information om webbplatsen</translation>
 <translation id="127353061808977798">Teckensnitt och kodning</translation>
@@ -1078,7 +1075,7 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="1773292249699193156">På kontot <ph name="ACCOUNT_EMAIL"/> kan det:</translation>
 <translation id="7206693748120342859">Hämtar <ph name="PLUGIN_NAME"/> ...</translation>
 <translation id="4744574733485822359">Hämtningen har slutförts</translation>
-<translation id="2872754556057097683">Flera olika rubriker med &quot;Content-Length&quot; togs emot. Eftersom vi vill förhindra attacker med delade HTTP-svar är detta inte tillåtet.</translation>
+<translation id="2872754556057097683">Flera olika rubriker med "Content-Length" togs emot. Eftersom vi vill förhindra attacker med delade HTTP-svar är detta inte tillåtet.</translation>
 <translation id="4804818685124855865">Koppla från</translation>
 <translation id="1645228020260124617"><ph name="PRECENTAGE"/> %</translation>
 <translation id="2585300050980572691">Standardinställningar för sökning</translation>
@@ -1147,7 +1144,7 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="3052216479134065394">API-anrop</translation>
 <translation id="6368046945223687609">Fördröjning av spellista</translation>
 <translation id="2617653079636271958">Zoom: <ph name="VALUE"/> %</translation>
-<translation id="8811462119186190367">Chromes språk har ändrats från &quot;<ph name="FROM_LOCALE"/>&quot; till &quot;<ph name="TO_LOCALE"/>&quot; efter synkronisering av dina inställningar.</translation>
+<translation id="8811462119186190367">Chromes språk har ändrats från "<ph name="FROM_LOCALE"/>" till "<ph name="TO_LOCALE"/>" efter synkronisering av dina inställningar.</translation>
 <translation id="1087119889335281750">&amp;Inga stavningsförslag</translation>
 <translation id="7252348743704726645">Logga in nu</translation>
 <translation id="5228309736894624122">SSL-protokollfel.</translation>
@@ -1411,7 +1408,7 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="7092106376816104">Undantag för popup-fönster</translation>
 <translation id="4830475881783902092">Klient-ID:</translation>
 <translation id="4600958291864306415">genereras ...</translation>
-<translation id="8594787581355215556">Inloggad som <ph name="USER_EMAIL_ADDRESS"/>. Hantera synkroniserade data i <ph name="BEGIN_LINK"/>Google Översikt<ph name="END_LINK"/>.</translation>
+<translation id="2669230071943955873">Inloggad som <ph name="USER_EMAIL_ADDRESS"/>. Hantera synkroniserade data i <ph name="BEGIN_LINK"/>BitPop Översikt<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Lägg till på startsidan</translation>
 <translation id="263325223718984101">Installationen av <ph name="PRODUCT_NAME"/> kunde inte slutföras, men programmet kommer att fortsätta köras från diskavbildningen.</translation>
 <translation id="1952837113524940233">Aktivera nya nätverkshanterare</translation>
@@ -1431,7 +1428,7 @@ experiment-ID: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="4250680216510889253">Nej</translation>
 <translation id="5109044022078737958">Mia</translation>
 <translation id="6291953229176937411">&amp;Visa i Finder</translation>
-<translation id="8598687241883907630">Koppla bort Google-kontot ...</translation>
+<translation id="3684341060830149235">Koppla bort Facebook/BitPop-kontot ...</translation>
 <translation id="2556718757702023317">För att kunna spara <ph name="FILE_NAME"/> offline måste du frigöra ytterligare <ph name="TOTAL_FILE_SIZE"/> utrymme:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>ta bort filer som du inte längre behöver kunna använda offline<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>ta bort filer från mappen Hämtade filer<ph name="MARKUP_5"/></translation>
@@ -1518,7 +1515,7 @@ Vill du starta <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="4181898366589410653">Ingen återkallningsmekanism hittades i servercertifikatet.</translation>
 <translation id="1515163294334130951">Starta</translation>
 <translation id="6914291514448387591"><ph name="PLUGIN_NAME"/> behöver din tillåtelse att köras.</translation>
-<translation id="1123316951456119629">Om du tar bort kopplingen mellan ditt Google-konto och <ph name="PRODUCT_NAME"/> kommer dataändringar på den här datorn inte längre att synkroniseras med Google-kontot. Data som redan finns lagrade i ditt Google-konto finns kvar där tills du tar bort dem i <ph name="BEGIN_LINK"/>Google Översikt<ph name="END_LINK"/>.</translation>
+<translation id="3144050057163527741">Om du tar bort kopplingen mellan ditt BitPop-konto och <ph name="PRODUCT_NAME"/> kommer dataändringar på den här datorn inte längre att synkroniseras med Google-kontot. Data som redan finns lagrade i ditt Google-konto finns kvar där tills du tar bort dem i <ph name="BEGIN_LINK"/>Google Översikt<ph name="END_LINK"/>.</translation>
 <translation id="8705331520020532516">Serienummer</translation>
 <translation id="1665770420914915777">Använd sidan Ny flik</translation>
 <translation id="5456409301717116725">Detta tillägg omfattar nyckelfilen <ph name="KEY_PATH"/>. Du vill antagligen inte göra detta.</translation>
@@ -1599,7 +1596,7 @@ Vill du starta <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6589706261477377614">Öka tangenternas ljusstyrka</translation>
 <translation id="1367951781824006909">Välj fil</translation>
 <translation id="8311778656528046050">Vill du hämta sidan igen?</translation>
-<translation id="1425127764082410430">&amp;Sök i <ph name="SEARCH_ENGINE"/> efter &quot;<ph name="SEARCH_TERMS"/>&quot;</translation>
+<translation id="1425127764082410430">&amp;Sök i <ph name="SEARCH_ENGINE"/> efter "<ph name="SEARCH_TERMS"/>"</translation>
 <translation id="684265517037058883">(inte giltigt ännu)</translation>
 <translation id="2027538664690697700">Uppdatera plugin-programmet...</translation>
 <translation id="8075539548641175231">Dina data har krypterats med din lösenfras för synkronisering den <ph name="TIME"/>. Ange den nedan.</translation>
@@ -1729,7 +1726,7 @@ Vill du starta <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="7434823369735508263">Dvorak-tangentbord för USA</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> dagar</translation>
 <translation id="8825366169884721447">Det här tillägget kunde inte ändra begäranderubriken <ph name="HEADER_NAME"/> för ett nätverk eftersom det uppstod en konflikt mellan ändringen och ett annat tillägg (<ph name="EXTENSION_NAME"/>).</translation>
-<translation id="5308845175611284862">Synkronisering med <ph name="PRODUCT_NAME"/> gör det lätt att dela uppgifter (till exempel bokmärken och inställningar) mellan datorer. <ph name="PRODUCT_NAME"/> synkroniserar uppgifter genom att dela dem online med Google när du loggar in på ditt Google-konto.</translation>
+<translation id="291445075019511713">Synkronisering med <ph name="PRODUCT_NAME"/> gör det lätt att dela uppgifter (till exempel bokmärken och inställningar) mellan datorer. <ph name="PRODUCT_NAME"/> synkroniserar uppgifter genom att dela dem online med BitPop när du loggar in på ditt BitPop-konto.</translation>
 <translation id="1707463636381878959">Dela nätverket med andra användare</translation>
 <translation id="3024663005179499861">Felaktig policytyp</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -1856,7 +1853,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
         webbläsaren. Antingen har ditt certifikat gått ut, eller så litar inte servern på utfärdaren.
         Du kan försöka igen med ett annat certifikat om du har ett. Annars måste du
         skaffa ett giltigt certifikat någon annanstans.</translation>
-<translation id="6295228342562451544">När du ansluter till en säker webbplats identifierar sig webbplatsservern för webbläsaren genom ett &quot;certifikat&quot;. Certifikatet innehåller identitetsinformation, t.ex. webbplatsens adress, som har verifierats av en tillförlitlig tredje part. Genom att kontrollera att adressen i certifikatet överensstämmer med adressen till webbplatsen kan du kontrollera att du kommunicerar säkert med den avsedda webbplatsen och inte med tredje part, t.ex. en bedragare i nätverket.</translation>
+<translation id="6295228342562451544">När du ansluter till en säker webbplats identifierar sig webbplatsservern för webbläsaren genom ett "certifikat". Certifikatet innehåller identitetsinformation, t.ex. webbplatsens adress, som har verifierats av en tillförlitlig tredje part. Genom att kontrollera att adressen i certifikatet överensstämmer med adressen till webbplatsen kan du kontrollera att du kommunicerar säkert med den avsedda webbplatsen och inte med tredje part, t.ex. en bedragare i nätverket.</translation>
 <translation id="6342069812937806050">Alldeles nyss</translation>
 <translation id="544083962418256601">Skapa genvägar ...</translation>
 <translation id="6810544202039995031">Använd en annan tjänst</translation>
@@ -1927,7 +1924,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="1601560923496285236">Verkställ</translation>
 <translation id="2390045462562521613">Spara inte det här nätverket</translation>
 <translation id="3348038390189153836">Flyttbar enhet upptäckt</translation>
-<translation id="8005540215158006229">Chrome är nästan klar.</translation>
+<translation id="3674182693516842999">BitPop är nästan klar.</translation>
 <translation id="1666788816626221136">Du har certifikat i din dator som inte passar i några av de andra kategorierna:</translation>
 <translation id="5698727907125761952">Officiell artist</translation>
 <translation id="4821935166599369261">&amp;Profilering aktiverad</translation>
@@ -1953,7 +1950,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="2615413226240911668">Den här sidan innehåller emellertid andra resurser som inte är säkra. Andra kan se resurserna när de överförs och hackare kan ändra resurserna så att sidan får ett annat utseende.</translation>
 <translation id="197288927597451399">Behåll</translation>
 <translation id="5880867612172997051">Nätverksåtkomst har stängts av tillfälligt</translation>
-<translation id="7842346819602959665">Den senaste versionen av &quot;<ph name="EXTENSION_NAME"/>&quot; kräver mer behörighet och har därför inaktiverats.</translation>
+<translation id="7842346819602959665">Den senaste versionen av "<ph name="EXTENSION_NAME"/>" kräver mer behörighet och har därför inaktiverats.</translation>
 <translation id="3776667127601582921">I det här fallet är det servercertifikat eller det CA-medelcertifikat som visas för webbläsaren ogiltigt. Det kan innebära att certifikatet har fel format, innehåller ogiltiga fält eller inte stöds.</translation>
 <translation id="3332701056481617438">Bevilja behörigheter</translation>
 <translation id="440265548246666650">Markören har dolts på sidan. Om du vill återställa den trycker du på Esc.</translation>
@@ -2080,7 +2077,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="748138892655239008">Grundbegränsningar för certifikat</translation>
 <translation id="457386861538956877">Mer...</translation>
 <translation id="9210991923655648139">Tillgänglig för skript:</translation>
-<translation id="4152177296285305182">Bara den som kan din lösenfras kan läsa dina krypterade data – lösenfrasen skickas inte till eller lagras av Google. Om du glömmer frasen måste du återställa synkroniseringen.</translation>
+<translation id="8792136381897173209">Bara den som kan din lösenfras kan läsa dina krypterade data – lösenfrasen skickas inte till eller lagras av BitPop. Om du glömmer frasen måste du återställa synkroniseringen.</translation>
 <translation id="1950295184970569138">* Profilfoto i Google Profiler (läser in)</translation>
 <translation id="8063491445163840780">Aktivera flik 4</translation>
 <translation id="5473544328731861874">Ta bort syfte</translation>
@@ -2102,7 +2099,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="4763830802490665879">Cookies från flera webbplatser kommer att rensas vid avslut.</translation>
 <translation id="1358032944105037487">Japanskt tangentbord</translation>
 <translation id="3897224341549769789">Aktiverar</translation>
-<translation id="2317866052221803936">Skicka en &quot;Do Not Track&quot;-begäran med din surftrafik</translation>
+<translation id="2317866052221803936">Skicka en "Do Not Track"-begäran med din surftrafik</translation>
 <translation id="4648491805942548247">Otillräckliga behörigheter</translation>
 <translation id="6231782223312638214">Förslag</translation>
 <translation id="3378649245744504729">Nytt album</translation>
@@ -2234,7 +2231,6 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="2563185590376525700">Groda</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> kunde inte ansluta till <ph name="NETWORK_ID"/>. Välj ett annat nätverk eller försök igen.</translation>
 <translation id="2086712242472027775">Kontot fungerar inte på <ph name="PRODUCT_NAME"/>. Kontakta domänadministratören eller logga in med ett vanligt Google-konto.</translation>
-<translation id="1373074393717692190">Logga in på <ph name="PRODUCT_NAME"/> med ditt Google-konto om du vill spara funktionerna för personlig sökning på webben och komma åt dem från <ph name="PRODUCT_NAME"/> på en mobil enhet. Du loggas också in automatiskt på dina favorittjänster från Google.</translation>
 <translation id="7222232353993864120">E-postadress</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="7175353351958621980">Överförd från:</translation>
@@ -2486,7 +2482,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="1752977958630076881">Behåll bara lokala uppgifter tills jag stänger webbläsaren</translation>
 <translation id="7853202427316060426">Aktivitet</translation>
 <translation id="8550022383519221471">Synkroniseringstjänsten är inte tillgänglig för din domän.</translation>
-<translation id="1436238710092600782">Skapa ett Google-konto</translation>
+<translation id="8612897762498195031">Skapa ett BitPop-konto</translation>
 <translation id="3355823806454867987">Ändra proxyinställningar...</translation>
 <translation id="2882324896611949356">Gör det möjligt att hämta kontakter från Google och visa dem i applistan.</translation>
 <translation id="4780374166989101364">Aktiverar tillägg med experimentella programmeringsgränssnitt. Observera att tilläggsgalleriet inte tillåter att du lägger upp tillägg med experimentella programmeringsgränssnitt.</translation>
@@ -2580,7 +2576,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="8314066201485587418">Ta bort cookies och andra webbplatsdata när jag stänger webbläsaren</translation>
 <translation id="4094105377635924481">Lägg till gruppering på flikens snabbmeny</translation>
 <translation id="765676359832457558">Dölj avancerade inställningar ...</translation>
-<translation id="7626032353295482388">Välkommen till Chrome</translation>
+<translation id="185658551912723674">Välkommen till BitPop</translation>
 <translation id="8655295600908251630">Kanal</translation>
 <translation id="8250690786522693009">Latin</translation>
 <translation id="2119721408814495896">Anslutningen för <ph name="CLOUD_PRINT_NAME"/> kräver att Microsoft XML Paper Specification Essentials Pack är installerat.</translation>
@@ -2812,7 +2808,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="1910721550319506122">Välkommen!</translation>
 <translation id="4035758313003622889">&amp;Aktivitetshanteraren</translation>
 <translation id="6356936121715252359">Lagringsinställningar för Adobe Flash Player...</translation>
-<translation id="1396529432791646744">När du ansluter till en säker webbplats visar servern som tillhandahåller webbplatsen ett så kallat &quot;certifikat&quot; i webbläsaren för att bekräfta dess identitet. Certifikatet innehåller uppgifter om identiteten, t.ex. webbadressen som verifieras av en tillförlitlig tredje part. När du kontrollerar att adressen i certifikatet överensstämmer med webbadressen kan du bekräfta att du kommunicerar säkert med den webbplats du hade tänkt dig och inte med en tredje part (t.ex. en bedragare i nätverket).</translation>
+<translation id="1396529432791646744">När du ansluter till en säker webbplats visar servern som tillhandahåller webbplatsen ett så kallat "certifikat" i webbläsaren för att bekräfta dess identitet. Certifikatet innehåller uppgifter om identiteten, t.ex. webbadressen som verifieras av en tillförlitlig tredje part. När du kontrollerar att adressen i certifikatet överensstämmer med webbadressen kan du bekräfta att du kommunicerar säkert med den webbplats du hade tänkt dig och inte med en tredje part (t.ex. en bedragare i nätverket).</translation>
 <translation id="8874184842967597500">Inte ansluten</translation>
 <translation id="7313804056609272439">Vietnamesisk inmatningsmetod (VNI)</translation>
 <translation id="3559966807355253173">Bakgrunden visas i bakgrunden och på inloggningsskärmen.</translation>
@@ -2838,7 +2834,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="8318945219881683434">Det gick inte att kontrollera återkallning.</translation>
 <translation id="1408789165795197664">Avancerat ...</translation>
 <translation id="1650709179466243265">Lägg till www. och .com och öppna adressen</translation>
-<translation id="436701661737309601">Utfärdaren ansvarar för att upprätta en &quot;återkallningslista&quot; för certifikat som inte har löpt ut. Om ett certifikat äventyras kan utfärdaren återkalla det genom att lägga till det i återkallningslistan. Det innebär att certifikatet inte längre är tillförlitligt. Återkallningsstatusen för certifikat som har löpt ut behöver inte uppdateras. Det här certifikatet användes tidigare för den aktuella webbplatsen, men det går inte längre att avgöra om certifikatet har äventyrats och återkallats eller om det fortfarande är säkert. Det är därför inte möjligt att avgöra om du kommunicerar med den äkta webbplatsen eller med en bedragare som har tagit över certifikatet.</translation>
+<translation id="436701661737309601">Utfärdaren ansvarar för att upprätta en "återkallningslista" för certifikat som inte har löpt ut. Om ett certifikat äventyras kan utfärdaren återkalla det genom att lägga till det i återkallningslistan. Det innebär att certifikatet inte längre är tillförlitligt. Återkallningsstatusen för certifikat som har löpt ut behöver inte uppdateras. Det här certifikatet användes tidigare för den aktuella webbplatsen, men det går inte längre att avgöra om certifikatet har äventyrats och återkallats eller om det fortfarande är säkert. Det är därför inte möjligt att avgöra om du kommunicerar med den äkta webbplatsen eller med en bedragare som har tagit över certifikatet.</translation>
 <translation id="7106346894903675391">Köp mer lagringsutrymme ...</translation>
 <translation id="3268742053547338987"><ph name="PEPPER_PLUGIN_NAME"/> på <ph name="PEPPER_PLUGIN_DOMAIN"/> vill ha åtkomst till den mobila enheten.</translation>
 <translation id="7258264058936813500">Läs in ändå</translation>
@@ -2959,7 +2955,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="9072684888578654899">{0}&lt;p&gt;{/0}
           Flikar som du har öppnat i Chrome på andra enheter visas här.
           {0}&lt;/p&gt;{/0}
-          {0}&lt;a href=&quot;#enablesync&quot;&gt;{/0}
+          {0}&lt;a href="#enablesync"&gt;{/0}
           Aktivera synkronisering.
           {0}&lt;/p&gt;{/0}</translation>
 <translation id="889901481107108152">Experimentet finns tyvärr inte på din plattform.</translation>
@@ -3043,7 +3039,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="462288279674432182">Begränsad IP:</translation>
 <translation id="3927932062596804919">Neka</translation>
 <translation id="9066075624350113914">Delar av detta PDF-dokument kan inte visas.</translation>
-<translation id="2753617847762399167">Illegal sökväg (absolut eller relativ med &quot;..&quot;): <ph name="IMAGE_PATH"/></translation>
+<translation id="2753617847762399167">Illegal sökväg (absolut eller relativ med ".."): <ph name="IMAGE_PATH"/></translation>
 <translation id="3187212781151025377">Hebreiskt tangentbord</translation>
 <translation id="1142012852508714031">Profilnamn</translation>
 <translation id="6311893923453953748">Ändra hur <ph name="APP_NAME"/> hanterar och visar språk</translation>
@@ -3109,7 +3105,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="6007237601604674381">Flytten misslyckades. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Det gick inte att skapa en tillfällig ZIP-fil under packningen.</translation>
 <translation id="1881456419707551346">Anslutningsinformation</translation>
-<translation id="1064912851688322329">Koppla bort Google-kontot</translation>
+<translation id="1175819364738375266">Koppla bort Facebook/BitPop-kontot</translation>
 <translation id="1294298200424241932">Redigera inställningar för tillförlitlighet:</translation>
 <translation id="1407135791313364759">Öppna alla</translation>
 <translation id="1434928358870966081">Inaktivera accelererad 2D-canvas</translation>
@@ -3314,7 +3310,7 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Måste vara en giltig webbadress</translation>
 <translation id="3464726836683998962">Inaktivera mobil dataroaming</translation>
-<translation id="8986494364107987395">Skicka användningsstatistik och kraschrapporter till Google automatiskt</translation>
+<translation id="7133428520955276418">Skicka användningsstatistik och kraschrapporter till House of Life automatiskt</translation>
 <translation id="7070714457904110559">Möjliggör experimentella tillägg till funktionen för geografisk plats. Innefattar att använda operativsystemets plats-API:er (om sådana finns) och att skicka ytterligare konfigurationsdata för det lokala nätverket till Googles platstjänst för att förbättra exaktheten i positioneringen.</translation>
 <translation id="6701535245008341853">Profilen kunde inte hämtas.</translation>
 <translation id="8303655282093186569">Inmatningsinställningar för pinyin</translation>
@@ -3351,9 +3347,9 @@ Publik exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitar):
 <translation id="4762295713053835808">Personligt</translation>
 <translation id="3445092916808119474">Ange som primär</translation>
 <translation id="6374100501221763867">Inaktivera maskinvaruaccelererad videoavkodning.</translation>
-<translation id="7477347901712410606">Om du har glömt lösenfrasen avslutar du och återställer synkroniseringen via <ph name="BEGIN_LINK"/>Google Översikt<ph name="END_LINK"/>.</translation>
+<translation id="1257410854647617646">Om du har glömt lösenfrasen avslutar du och återställer synkroniseringen via <ph name="BEGIN_LINK"/>BitPop Översikt<ph name="END_LINK"/>.</translation>
 <translation id="3085235303151103497">Aktivera felsökning för packade appar.</translation>
-<translation id="2645575947416143543">Om du däremot arbetar inom en organisation som skapar egna certifikat och du försöker ansluta till en intern webbplats inom organisationen med ett sådant certifikat, kanske du kan lösa problemet säkert. Du kan importera organisationens rotcertifikat som ett &quot;rotcertifikat&quot;. Då kommer certifikat som utfärdas och verifieras av din organisation att vara betrodda och den här feltexten visas inte nästa gång du försöker ansluta till en intern webbplats. Kontakta organisationens supportpersonal om du behöver hjälp med att lägga till ett nytt rotcertifikat på din dator.</translation>
+<translation id="2645575947416143543">Om du däremot arbetar inom en organisation som skapar egna certifikat och du försöker ansluta till en intern webbplats inom organisationen med ett sådant certifikat, kanske du kan lösa problemet säkert. Du kan importera organisationens rotcertifikat som ett "rotcertifikat". Då kommer certifikat som utfärdas och verifieras av din organisation att vara betrodda och den här feltexten visas inte nästa gång du försöker ansluta till en intern webbplats. Kontakta organisationens supportpersonal om du behöver hjälp med att lägga till ett nytt rotcertifikat på din dator.</translation>
 <translation id="1056898198331236512">Varning</translation>
 <translation id="8432745813735585631">Colemak-tangentbord för USA</translation>
 <translation id="3190968772390556821"><ph name="EXTENSION_NAME"/> spelar just nu in ljud för taligenkänning.</translation>
@@ -3542,7 +3538,7 @@ hanteraren
 <translation id="7999087758969799248">Standardinmatningsmetod</translation>
 <translation id="2635276683026132559">Signering</translation>
 <translation id="4835836146030131423">Inloggningsfel.</translation>
-<translation id="8130354475736846998">Gör så att appen Filer använder det nya API:t &quot;paketerade filer&quot;.</translation>
+<translation id="8130354475736846998">Gör så att appen Filer använder det nya API:t "paketerade filer".</translation>
 <translation id="7489517910697905073">Inaktivera meddelanden</translation>
 <translation id="2475982808118771221">Det uppstod ett fel</translation>
 <translation id="7367593937563373729">Använder den nya poängfunktionen i adressfältets autoslutförande för att rangordna matchningar som kommer från HistoryQuickProvider.</translation>
@@ -3554,7 +3550,7 @@ hanteraren
 <translation id="4971925105143343452">Delvis</translation>
 <translation id="3454157711543303649">Aktiveringen har slutförts</translation>
 <translation id="884923133447025588">Ingen återkallningsmekanism har hittats.</translation>
-<translation id="7801746894267596941">Bara den som kan din lösenfras kan läsa dina krypterade data. Lösenfrasen skickas inte till eller lagras av Google. Om du glömmer frasen, måste du</translation>
+<translation id="2077681924461579449">Bara den som kan din lösenfras kan läsa dina krypterade data. Lösenfrasen skickas inte till eller lagras av BitPop. Om du glömmer frasen, måste du</translation>
 <translation id="5406835729608468430">Visa med …</translation>
 <translation id="291886813706048071">Du kan söka härifrån med <ph name="SEARCH_ENGINE"/></translation>
 <translation id="556042886152191864">Knapp</translation>
@@ -3737,7 +3733,7 @@ hanteraren
 <translation id="8948393169621400698">Tillåt alltid plugin-program på <ph name="HOST"/></translation>
 <translation id="6527303717912515753">Dela</translation>
 <translation id="4285498937028063278">Lossa</translation>
-<translation id="2588322182880276190">Logotypen för Chrome</translation>
+<translation id="193954205383164322">Logotypen för BitPop</translation>
 <translation id="7893008570150657497">Få åtkomst till foton, musik och andra medier från datorn</translation>
 <translation id="5449624072515809082">Aktivera autokorrigering av text medan du skriver. Synkron rättstavning är inte kompatibel med den här funktionen.</translation>
 <translation id="8291808604460602261">Tillåt Web Intents om du vill kunna ansluta appar.</translation>
@@ -4078,7 +4074,7 @@ hanteraren
 <translation id="3021678814754966447">&amp;Visa ramkälla</translation>
 <translation id="8601206103050338563">TLS WWW-klientautentisering</translation>
 <translation id="1692799361700686467">Cookies från flera webbplatser tillåts.</translation>
-<translation id="5187295959347858724">Du är nu inloggad i <ph name="SHORT_PRODUCT_NAME"/>. Bokmärken, historik och andra inställningar synkroniseras med ditt Google-konto.</translation>
+<translation id="6928105098560478094">Du är nu inloggad i <ph name="SHORT_PRODUCT_NAME"/>. Bokmärken, historik och andra inställningar synkroniseras med ditt BitPop-konto.</translation>
 <translation id="7381706763856392587"><ph name="FILENAME"/> togs bort</translation>
 <translation id="529232389703829405">Du köpte <ph name="DATA_AMOUNT"/> data den <ph name="DATE"/></translation>
 <translation id="7419106976560586862">Profilsökväg</translation>
@@ -4147,7 +4143,7 @@ hanteraren
 <translation id="6692173217867674490">Ogiltig lösenfras</translation>
 <translation id="5550431144454300634">Korrigera inmatning automatiskt</translation>
 <translation id="3308006649705061278">Organisationsenhet (OU)</translation>
-<translation id="8912362522468806198">Google-konto</translation>
+<translation id="9034203691147880734">BitPop-konto</translation>
 <translation id="4839847978919684242"><ph name="SELCTED_FILES_COUNT"/> poster har valts</translation>
 <translation id="4443536555189480885">&amp;Hjälp</translation>
 <translation id="6993309531105463648">Inaktivera automatisk fönsterplacering för en och två webbläsare/appfönster.</translation>
@@ -4380,9 +4376,9 @@ hanteraren
 <translation id="5332624210073556029">Tidszon:</translation>
 <translation id="6198102561359457428">Logga ut och sedan in igen ...</translation>
 <translation id="4799797264838369263">Det här alternativet styrs av en företagspolicy. Kontakta administratören om du vill veta mer.</translation>
-<translation id="4492190037599258964">Sökresultat för &quot;<ph name="SEARCH_STRING"/>&quot;</translation>
+<translation id="4492190037599258964">Sökresultat för "<ph name="SEARCH_STRING"/>"</translation>
 <translation id="9154418932169119429">Denna bild är inte tillgänglig offline.</translation>
-<translation id="3573179567135747900">Byt tillbaka till &quot;<ph name="FROM_LOCALE"/>&quot; (kräver omstart)</translation>
+<translation id="3573179567135747900">Byt tillbaka till "<ph name="FROM_LOCALE"/>" (kräver omstart)</translation>
 <translation id="8235333616059839358">Kontrollera Internetanslutningen. Starta om routrar, modem och andra nätverksenheter som eventuellt används.</translation>
 <translation id="8940081510938872932">Datorn har för mycket att göra just nu. Försök igen senare.</translation>
 <translation id="4042471398575101546">Lägg till sida</translation>
@@ -4517,7 +4513,7 @@ Tryck på någon tangent om du vill fortsätta utforska.</translation>
 <translation id="1177437665183591855">Fel - okänt servercertifikat</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> försöker använda kameran och mikrofonen.</translation>
 <translation id="8467473010914675605">Koreansk inmatningsmetod</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> synkroniserar data säkert med ditt Google-konto. Håll allt synkroniserat eller anpassa synkroniseringsdatatyperna och inställningarna för kryptering.</translation>
+<translation id="7938022885346429483"><ph name="PRODUCT_NAME"/> synkroniserar data säkert med ditt BitPop-konto. Håll allt synkroniserat eller anpassa synkroniseringsdatatyperna och inställningarna för kryptering.</translation>
 <translation id="2639739919103226564">Status:</translation>
 <translation id="824543159844843373">Aktivera startprogramsobjekt 3</translation>
 <translation id="6923900367903210484">Upphovsrätt</translation>
@@ -4545,7 +4541,7 @@ Tryck på någon tangent om du vill fortsätta utforska.</translation>
 <translation id="2101797668776986011">Pepper 3D</translation>
 <translation id="1581962803218266616">Visa i Finder</translation>
 <translation id="9100765901046053179">Avancerade inställningar</translation>
-<translation id="203168018648013061">Synkroniseringsfel. Återställ synkroniseringen via Google Översikt.</translation>
+<translation id="2936690273131526650">Synkroniseringsfel. Återställ synkroniseringen via BitPop Översikt.</translation>
 <translation id="1405126334425076373">Muspekare</translation>
 <translation id="6671493224572088110">Titta på <ph name="VIDEO_NAME"/></translation>
 <translation id="6096326118418049043">X.500-namn</translation>
@@ -4666,7 +4662,7 @@ Tryck på någon tangent om du vill fortsätta utforska.</translation>
 <translation id="2050339315714019657">Stående</translation>
 <translation id="6978839998405419496"><ph name="NUMBER_ZERO"/> days ago</translation>
 <translation id="8273027367978594412">När funktionen är aktiverad blir en gästanvändare tillgänglig i Chrome på datorn.</translation>
-<translation id="8188199528179562676">När du tar bort kopplingen mellan ditt Google-konto och <ph name="PRODUCT_NAME"/> synkroniseras inte längre uppgifter på den här mobila enheten med Google-kontot. Uppgifter som redan har sparats i Google-kontot finns kvar tills du tar bort dem i <ph name="BEGIN_LINK"/>Google Översikt<ph name="END_LINK"/>.</translation>
+<translation id="3972854587947107012">När du tar bort kopplingen mellan ditt BitPop-konto och <ph name="PRODUCT_NAME"/> synkroniseras inte längre uppgifter på den här mobila enheten med Google-kontot. Uppgifter som redan har sparats i Google-kontot finns kvar tills du tar bort dem i <ph name="BEGIN_LINK"/>Google Översikt<ph name="END_LINK"/>.</translation>
 <translation id="8261490674758214762">De kan:</translation>
 <translation id="5112577000029535889">Verktyg för &amp;utvecklare</translation>
 <translation id="2301382460326681002">Tilläggets rotkatalog är ogiltig.</translation>

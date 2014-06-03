@@ -169,7 +169,7 @@ void VersionUpdaterWin::UpdateStatus(GoogleUpdateUpgradeResult result,
   // For Chromium builds it would show an error message.
   // But it looks weird because in fact there is no error,
   // just the update server is not available for non-official builds.
-#if defined(GOOGLE_CHROME_BUILD)
+#if 1 //defined(GOOGLE_CHROME_BUILD)
   Status status = UPDATED;
   string16 message;
 

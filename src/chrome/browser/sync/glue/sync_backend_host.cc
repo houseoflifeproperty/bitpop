@@ -427,10 +427,12 @@ void SyncBackendHost::Initialize(
   };
 
   CommandLine* cl = CommandLine::ForCurrentProcess();
+  /*
   if (cl->HasSwitch(switches::kSyncKeystoreEncryption)) {
     factory_switches.encryption_method =
         InternalComponentsFactoryImpl::ENCRYPTION_KEYSTORE;
   }
+  */
   if (cl->HasSwitch(switches::kSyncShortInitialRetryOverride)) {
     factory_switches.backoff_override =
         InternalComponentsFactoryImpl::BACKOFF_SHORT_INITIAL_RETRY_OVERRIDE;

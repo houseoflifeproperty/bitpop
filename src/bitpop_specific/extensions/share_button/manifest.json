@@ -1,0 +1,20 @@
+{
+   "background": {
+     "scripts": ["background.js"]
+   },
+   "page_action": {
+      "default_icon": "images/share-icon-16x16.png",
+      "default_title": "Facebook Share Button"
+   },
+   "description": "Fast & simple way to share the currently viewed page on Facebook.",
+   "icons": {
+      "128": "images/facebook_128.png",
+      "16": "images/facebook_16.png",
+      "32": "images/facebook_32.png",
+      "64": "images/facebook_64.png"
+   },
+   "name": "Facebook Share Button (by Shareaholic) (modified)",
+   "permissions": [ "tabs", "http://*/*", "https://*/*" ],
+   "version": "0.4",
+   "manifest_version": 2
+}

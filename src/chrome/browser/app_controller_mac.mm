@@ -22,6 +22,8 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -81,6 +83,8 @@ using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadManager;
 using content::UserMetricsAction;
+
+#import "SUUpdater.h"
 
 namespace {
 
@@ -543,6 +547,14 @@ void RecordLastRunAppBundlePath() {
 #endif
 }
 
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
+{
+  if (object == [NSUserDefaults standardUserDefaults] && [keyPath isEqualToString:@"SUAutomaticallyUpdate"]) {
+    PrefService* prefService = self.lastProfile->GetPrefs();
+    prefService->SetBoolean(prefs::kAutomaticUpdatesEnabled, [[change objectForKey:NSKeyValueChangeNewKey] boolValue]);
+  }
+}
+
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidFinishLaunching:(NSNotification*)notify {
@@ -587,11 +599,18 @@ void RecordLastRunAppBundlePath() {
   if (!parsed_command_line.HasSwitch(switches::kEnableExposeForTabs)) {
     [tabposeMenuItem_ setHidden:YES];
   }
+
+  [[NSUserDefaults standardUserDefaults] addObserver:self forKeyPath:@"SUAutomaticallyUpdate" options:NSKeyValueObservingOptionNew context:NULL];
 }
 
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidBecomeActive:(NSNotification*)notify {
+  FacebookBitpopNotification *notif =
+      FacebookBitpopNotificationServiceFactory::GetForProfile(
+          [self lastProfile]);
+  if (notif)
+    notif->ClearNotification();
   content::PluginService::GetInstance()->AppActivated();
 }
 

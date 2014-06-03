@@ -1,0 +1,12 @@
+.header-column {
+	font-weight: bold;
+}
+
+.src-domain-column {
+	width: 50%;
+}
+
+.src-domain-column, .dst-domain-column {
+	overflow: ellipsis;
+}
+

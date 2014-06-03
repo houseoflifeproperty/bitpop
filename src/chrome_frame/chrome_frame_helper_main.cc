@@ -30,7 +30,7 @@ const wchar_t kChromeFrameHelperWindowName[] =
     L"ChromeFrameHelperWindowName";
 
 const wchar_t kChromeFrameClientStateKey[] =
-    L"Software\\Google\\Update\\ClientState\\"
+    L"Software\\HouseOfLife\\BitPopUpdate\\ClientState\\"
     L"{8BA986DA-5100-405E-AA35-86F34A02ACBF}";
 const wchar_t kChromeFrameUninstallCmdExeValue[] = L"UninstallString";
 const wchar_t kChromeFrameUninstallCmdArgsValue[] = L"UninstallArguments";

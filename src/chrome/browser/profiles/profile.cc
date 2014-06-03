@@ -108,6 +108,11 @@ void Profile::RegisterUserPrefs(PrefService* prefs) {
                              PrefService::UNSYNCABLE_PREF);
 #endif
 
+#if defined(OS_MACOSX)
+  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+#endif
 }
 
 
@@ -143,3 +148,11 @@ void Profile::MaybeSendDestroyedNotification() {
         content::NotificationService::NoDetails());
   }
 }
+
+bool Profile::should_show_additional_extensions() const {
+  return false;
+}
+
+void Profile::set_should_show_additional_extensions(bool flag) {
+}
+

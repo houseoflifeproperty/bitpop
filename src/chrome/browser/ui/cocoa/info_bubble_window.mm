@@ -144,7 +144,7 @@ class AppNotificationBridge : public content::NotificationObserver {
 // Lets the traffic light buttons on the browser window keep their "active"
 // state while an info bubble is open. Only has an effect on 10.7.
 - (BOOL)_sharesParentKeyState {
-  return YES;
+  return canBecomeKeyWindow_ ? [self isKeyWindow] : YES;
 }
 
 - (void)close {

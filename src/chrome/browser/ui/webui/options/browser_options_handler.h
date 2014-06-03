@@ -262,6 +262,12 @@ class BrowserOptionsHandler
   void SetupAccessibilityFeatures();
 #endif
 
+#if defined(OS_MACOSX)
+  // Called when 'Automatic updates' checkbox is toggled.
+  // Sets SUUpdater property. |args| is ignored.
+  void ToggleAutomaticUpdates(const ListValue* args);
+#endif
+
   // Returns a newly created dictionary with a number of properties that
   // correspond to the status of sync.
   scoped_ptr<DictionaryValue> GetSyncStateDictionary();

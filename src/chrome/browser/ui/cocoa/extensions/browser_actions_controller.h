@@ -105,6 +105,9 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
 // process of fading in.
 - (BOOL)chevronIsHidden;
 
+- (void)showFacebookExtensions;
+- (void)hideFacebookExtensions;
+
 // Registers the user preferences used by this class.
 + (void)registerUserPrefs:(PrefService*)prefs;
 

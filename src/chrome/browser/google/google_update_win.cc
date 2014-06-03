@@ -35,9 +35,10 @@ namespace {
 // Chrome distribution installed in a standard location.
 GoogleUpdateErrorCode CanUpdateCurrentChrome(
     const FilePath& chrome_exe_path) {
-#if !defined(GOOGLE_CHROME_BUILD)
-  return CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY;
-#else
+//#if !defined(GOOGLE_CHROME_BUILD)
+//  return CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY;
+//#else
+#if 1
   // TODO(tommi): Check if using the default distribution is always the right
   // thing to do.
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();

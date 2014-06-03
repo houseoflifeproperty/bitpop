@@ -95,8 +95,9 @@ SafeBrowsingProtocolManager::SafeBrowsingProtocolManager(
 
   // Set the backoff multiplier fuzz to a random value between 0 and 1.
   back_off_fuzz_ = static_cast<float>(base::RandDouble());
-  if (version_.empty())
-    version_ = SafeBrowsingProtocolManagerHelper::Version();
+
+  chrome::VersionInfo version_info;
+  version_ = version_info.ChromiumReleaseVersion();
 }
 
 // static

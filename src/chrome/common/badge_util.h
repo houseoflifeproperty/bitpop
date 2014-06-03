@@ -34,6 +34,11 @@ SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
                               const string16& text,
                               const string16& fallback);
 
+// Get badge rect
+gfx::Rect BadgeRect(const gfx::Rect& bounds,
+						  		  const std::string& text,
+							 			int icon_width);
+
 // Paints badge with specified parameters to |canvas|.
 void PaintBadge(gfx::Canvas* canvas,
                 const gfx::Rect& bounds,

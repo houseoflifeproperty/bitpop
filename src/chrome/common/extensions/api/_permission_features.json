@@ -40,6 +40,11 @@
       "extension", "packaged_app", "hosted_app"
     ]
   },
+  "bitpop": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "location": "component"
+  },
   "bluetooth": {
     "channel": "dev",
     "extension_types": ["platform_app"]

@@ -319,7 +319,7 @@ const FilePath::CharType Extension::kMessagesFilename[] =
 
 #if defined(OS_WIN)
 const char Extension::kExtensionRegistryPath[] =
-    "Software\\Google\\Chrome\\Extensions";
+    "Software\\HouseOfLife\\BitPop\\Extensions";
 #endif
 
 // first 16 bytes of SHA256 hashed public key.
@@ -402,6 +402,20 @@ scoped_refptr<Extension> Extension::Create(const FilePath& path,
   if (!InitExtensionID(manifest.get(), path, explicit_id, flags, &error)) {
     *utf8_error = UTF16ToUTF8(error);
     return NULL;
+  }
+
+  if (manifest->extension_id() == chrome::kFacebookChatExtensionId ||
+      manifest->extension_id() == chrome::kFacebookControllerExtensionId ||
+      manifest->extension_id() == chrome::kFacebookMessagesExtensionId ||
+      manifest->extension_id() == chrome::kFacebookNotificationsExtensionId ||
+      manifest->extension_id() == chrome::kUncensorISPExtensionId ||
+      manifest->extension_id() == chrome::kUncensorFilterExtensionId) {
+     std::string id(manifest->extension_id());
+     Location new_location = Extension::COMPONENT;
+     manifest.reset(new extensions::Manifest(
+                        new_location,
+                        scoped_ptr<DictionaryValue>(value.DeepCopy())));
+     manifest->set_extension_id(id);
   }
 
   InstallWarningVector install_warnings;
@@ -4140,7 +4154,7 @@ bool Extension::CheckMinimumChromeVersion(string16* error) const {
     return false;
   }
 
-  Version current_version(current_version_info.Version());
+  Version current_version(current_version_info.ChromiumReleaseVersion());
   if (!current_version.IsValid()) {
     DCHECK(false);
     return false;

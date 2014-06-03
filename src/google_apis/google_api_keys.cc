@@ -39,7 +39,7 @@
 // TODO(joi): This is temporary; switch to DUMMY_API_TOKEN once people
 // have had some time to install API keys per
 // http://chromium.org/developers/how-tos/api-keys
-#define GOOGLE_API_KEY "AIzaSyBHDrl33hwRp4rMQY0ziRbj8K9LPA6vUCY"
+#define GOOGLE_API_KEY "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw"
 #endif
 
 #if !defined(GOOGLE_CLIENT_ID_MAIN)

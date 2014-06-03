@@ -445,7 +445,7 @@ const BookmarkNode* ApplyEditsWithPossibleFolderChange(
 
 void RegisterUserPrefs(PrefServiceBase* prefs) {
   prefs->RegisterBooleanPref(prefs::kShowBookmarkBar,
-                             false,
+                             true,
                              PrefServiceBase::SYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled,
                              true,

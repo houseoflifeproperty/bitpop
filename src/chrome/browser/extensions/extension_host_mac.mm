@@ -6,6 +6,7 @@
 
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_popup_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/common/view_type.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -22,6 +23,14 @@ ExtensionHostMac::~ExtensionHostMac() {
     InfoBubbleWindow* window = (InfoBubbleWindow*)[popup window];
     [window setDelayOnClose:NO];
     [popup close];
+  }
+
+  FacebookPopupController* fpopup = [FacebookPopupController popup];
+  if ([[fpopup window] isVisible] &&
+      [fpopup extensionHost]->extension() == this->extension()) {
+    InfoBubbleWindow* window = (InfoBubbleWindow*)[fpopup window];
+    [window setDelayOnClose:NO];
+    [fpopup close];
   }
 }
 

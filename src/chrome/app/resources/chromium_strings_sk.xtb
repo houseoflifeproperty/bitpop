@@ -1,55 +1,54 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="sk">
 <translation id="6676384891291319759">Prístup do siete Internet</translation>
-<translation id="6373523479360886564">Naozaj chcete Chromium odinštalovať?</translation>
-<translation id="6510925080656968729">Odinštalovať Chromium</translation>
-<translation id="6893813176749746474">Prehliadač Chromium bol aktualizovaný, ale najmenej 30 dní ste ho nepoužili.</translation>
-<translation id="1550579416447684632">Spustiť aplikácie Chromium</translation>
-<translation id="4267347018362241535">Chromium App Launcher je samostatná platforma pre aplikácie Chromium.</translation>
+<translation id="8447784615389818621">Naozaj chcete BitPop odinštalovať?</translation>
+<translation id="100741878661450640">Odinštalovať BitPop</translation>
+<translation id="4301276314211054820">Prehliadač BitPop bol aktualizovaný, ale najmenej 30 dní ste ho nepoužili.</translation>
+<translation id="8935261719622405725">Spustiť aplikácie BitPop</translation>
+<translation id="2556535128417126306">BitPop App Launcher je samostatná platforma pre aplikácie BitPop.</translation>
 <translation id="2770231113462710648">Zmeniť predvolený prehliadač na:</translation>
-<translation id="6613594504749178791">Zmeny sa prejavia pri nasledujúcom reštartovaní prehliadača Chromium.</translation>
-<translation id="3748537968684000502">Práve si prezeráte zabezpečenú stránku prehliadača Chromium.</translation>
-<translation id="8971920611044657379">Chromium Frame</translation>
+<translation id="6870152852581894991">Zmeny sa prejavia pri nasledujúcom reštartovaní prehliadača BitPop.</translation>
+<translation id="3588014340702790340">Práve si prezeráte zabezpečenú stránku prehliadača BitPop.</translation>
+<translation id="6789998774111513164">BitPop Frame</translation>
 <translation id="1065672644894730302">Vaše predvoľby sa nedajú načítať.
 
 Niektoré funkcie nemusia byť k dispozícii a zmeny vykonané v predvoľbách sa neuložia.</translation>
-<translation id="4222661289444749267">Aktualizácia aplikácie Chromium Frame.</translation>
-<translation id="2843244238218937196">Chromium Renderer</translation>
-<translation id="7128196614940529818">Aplikácia Chromium Frame už je nainštalovaná a je k dispozícii pre všetkých používateľov v tomto počítači. Ak chcete nainštalovať aplikáciu Chromium Frame na úrovni používateľa, musíte najskôr odinštalovať verziu na úrovni systému, ktorú nainštaloval správca.</translation>
+<translation id="4901429675189043920">Aktualizácia aplikácie BitPop Frame.</translation>
+<translation id="1132852132282742543">BitPop Renderer</translation>
+<translation id="7155774694068736041">Aplikácia BitPop Frame už je nainštalovaná a je k dispozícii pre všetkých používateľov v tomto počítači. Ak chcete nainštalovať aplikáciu BitPop Frame na úrovni používateľa, musíte najskôr odinštalovať verziu na úrovni systému, ktorú nainštaloval správca.</translation>
 <translation id="731644333568559921">Aktualizovať systém &amp;Chromium OS</translation>
-<translation id="7421823331379285070">Prehliadač Chromium vyžaduje systém Windows XP alebo novší. Niektoré funkcie nemusia fungovať.</translation>
+<translation id="5284421695473942517">Prehliadač BitPop vyžaduje systém Windows XP alebo novší. Niektoré funkcie nemusia fungovať.</translation>
 <translation id="3549345495227188780">Začíname so systémom OS Chromium</translation>
-<translation id="4330297532943865716">V systéme sa našla kolidujúca inštalácia prehliadača Chromium alebo aplikácie Chromium Frame. Odinštalujte ju a skúste to znova.</translation>
-<translation id="6953661834318318668">Panel s nástrojmi Chromium</translation>
-<translation id="7097100943370017396">Prehliadač Chromium sa už neaktualizuje, pretože váš operačný systém je zastaraný.</translation>
-<translation id="2245147136185581459">Detektor Chromium Captive Portal</translation>
-<translation id="4285930937574705105">Inštalácia zlyhala kvôli neurčenej chybe. Ak je prehliadač Chromium momentálne spustený, zatvorte ho a skúste znova.</translation>
-<translation id="2589479092236095792">Nastavenia Automatického dopĺňania v prehliadači Chromium</translation>
-<translation id="658492233547000995">Spúšťajte aplikácie pomocou platformy Chromium Apps Launcher.</translation>
+<translation id="8363397932717822970">V systéme sa našla kolidujúca inštalácia prehliadača BitPop alebo aplikácie BitPop Frame. Odinštalujte ju a skúste to znova.</translation>
+<translation id="8235603028098851915">Panel s nástrojmi BitPop</translation>
+<translation id="5953515305183787825">Prehliadač BitPop sa už neaktualizuje, pretože váš operačný systém je zastaraný.</translation>
+<translation id="7230682351542979557">Detektor BitPop Captive Portal</translation>
+<translation id="325440606879482824">Inštalácia zlyhala kvôli neurčenej chybe. Ak je prehliadač BitPop momentálne spustený, zatvorte ho a skúste znova.</translation>
+<translation id="7224939653007212692">Nastavenia Automatického dopĺňania v prehliadači BitPop</translation>
+<translation id="3078552028547324322">Spúšťajte aplikácie pomocou platformy BitPop Apps Launcher.</translation>
 <translation id="3555616473548901994">Odinštalovanie dokončené.</translation>
-<translation id="3674409928058572366">Chromium App Host</translation>
-<translation id="2886012850691518054">Voliteľné: Pomôžte vylepšiť služby prehliadača Chromium tým, že nastavíte automatické odosielanie štatistík používania a správ o zlyhaní spoločnosti Google.</translation>
-<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> – Chromium</translation>
-<translation id="1989424089625731201">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát, ktorý obsahuje chyby. Prehliadač Chromium nemôže použiť certifikát s chybami a nemôže overiť totožnosť stránok, ku ktorým sa pokúšate pripojiť.</translation>
-<translation id="3103660991484857065">Inštalačný program pri dekomprimácii archívu zlyhal. Prevezmite prehliadač Chromium znova.</translation>
-<translation id="872034308864968620">Povoliť prehliadaču Chromium spustenie na pozadí</translation>
-<translation id="5109068449432240255">Áno, ukončiť Chromium</translation>
-<translation id="4320129595801648679">Stránka Nová karta v prehliadači Chromium bola zmenená. Pomocou menoviek môžete prepínať medzi jednotlivými sekciami. Prehliadač si zapamätá vaše predvoľby a použije ich pri ďalšom použití.</translation>
+<translation id="5814137742095860156">BitPop App Host</translation>
+<translation id="9205983754412543288">Voliteľné: Pomôžte vylepšiť služby prehliadača BitPop tým, že nastavíte automatické odosielanie štatistík používania a správ o zlyhaní spoločnosti Google.</translation>
+<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> – BitPop</translation>
+<translation id="6259082392093297310">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát, ktorý obsahuje chyby. Prehliadač BitPop nemôže použiť certifikát s chybami a nemôže overiť totožnosť stránok, ku ktorým sa pokúšate pripojiť.</translation>
+<translation id="3801183610358973379">Inštalačný program pri dekomprimácii archívu zlyhal. Prevezmite prehliadač BitPop znova.</translation>
+<translation id="4450789702440326676">Povoliť prehliadaču BitPop spustenie na pozadí</translation>
+<translation id="2963590958538393837">Áno, ukončiť BitPop</translation>
+<translation id="8031724302809093115">Stránka Nová karta v prehliadači BitPop bola zmenená. Pomocou menoviek môžete prepínať medzi jednotlivými sekciami. Prehliadač si zapamätá vaše predvoľby a použije ich pri ďalšom použití.</translation>
 <translation id="1480489203462860648">Vyskúšať, prehliadač je už nainštalovaný</translation>
-<translation id="3032787606318309379">Pridáva sa do prehliadača Chromium...</translation>
-<translation id="4831257561365056138">Odinštalovať platformu Chromium App Launcher</translation>
-<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Upozornenie:<ph name="END_BOLD"/> Prehliadač Chromium nemôže zabrániť rozšíreniam v zaznamenávaní vašej histórie prehliadania. Ak chcete toto rozšírenie v režime inkognito zakázať, zrušte výber tejto možnosti.</translation>
-<translation id="985602178874221306">Autori prehliadača Chromium</translation>
-<translation id="8628626585870903697">Prehliadač Chromium neobsahuje nástroj na zobrazovanie súborov PDF, ktorý je potrebný pre funkciu Ukážka pred tlačou.</translation>
-<translation id="7138853919861947730">Prehliadač Chromium vám môže spríjemniť prehliadanie pomocou webových služieb.</translation>
-<translation id="466053073629175099">Teraz ste prihlásený/-á do systému Chromium. Vaše záložky, história a ďalšie nastavenia budú synchronizované s vaším účtom Google.</translation>
-<translation id="4179848566211676653">Ukončiť prehliadač Chromium</translation>
-<translation id="3849925841547750267">Nastavenia prehliadača Mozilla Firefox žiaľ nie sú k dispozícii, kým je prehliadač spustený. Ak chcete tieto nastavenia importovať do prehliadača Chromium, uložte svoju prácu a zatvorte všetky okná prehliadača Firefox. Následne kliknite na tlačidlo Pokračovať.</translation>
-<translation id="7771626876550251690">V tomto prípade adresa uvedená v certifikáte nezodpovedá adrese webových stránok, na ktoré sa prehliadač pokúšal prejsť. Jedným z možných dôvodov je, že vašu komunikáciu zachytáva útočník, ktorý používa certifikát pre iné webové stránky, a spôsobuje tak chybu. Ďalším možným dôvodom je, že server je nastavený tak, aby vrátil rovnaký certifikát pre viacero rôznych webových stránok vrátane tých, ktoré sa pokúšate navštíviť, a to aj napriek tomu, že tento certifikát nie je platný pre všetky webové stránky. Prehliadač Chromium môže s istotou potvrdiť, že ste sa dostali na doménu &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, no nemôže overiť, že sa jedná o rovnaké stránky ako &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, na ktoré ste sa chceli dostať. Ak budete pokračovať, nebude prehliadač Chromium v budúcnosti kontrolovať žiadne nezhody v názvoch.</translation>
-<translation id="2401271577450445716">Prejdite na
+<translation id="7098153548331126805">Pridáva sa do prehliadača BitPop...</translation>
+<translation id="5928487969163300899">Odinštalovať platformu BitPop App Launcher</translation>
+<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Upozornenie:<ph name="END_BOLD"/> Prehliadač BitPop nemôže zabrániť rozšíreniam v zaznamenávaní vašej histórie prehliadania. Ak chcete toto rozšírenie v režime inkognito zakázať, zrušte výber tejto možnosti.</translation>
+<translation id="3941397373453695568">Prehliadač BitPop neobsahuje nástroj na zobrazovanie súborov PDF, ktorý je potrebný pre funkciu Ukážka pred tlačou.</translation>
+<translation id="8155571637339134666">Prehliadač BitPop vám môže spríjemniť prehliadanie pomocou webových služieb.</translation>
+<translation id="5383732173730790693">Teraz ste prihlásený/-á do systému BitPop. Vaše záložky, história a ďalšie nastavenia budú synchronizované s vaším účtom Google.</translation>
+<translation id="6866316083935040427">Ukončiť prehliadač BitPop</translation>
+<translation id="4759775690587852534">Nastavenia prehliadača Mozilla Firefox žiaľ nie sú k dispozícii, kým je prehliadač spustený. Ak chcete tieto nastavenia importovať do prehliadača BitPop, uložte svoju prácu a zatvorte všetky okná prehliadača Firefox. Následne kliknite na tlačidlo Pokračovať.</translation>
+<translation id="2411757162791070146">V tomto prípade adresa uvedená v certifikáte nezodpovedá adrese webových stránok, na ktoré sa prehliadač pokúšal prejsť. Jedným z možných dôvodov je, že vašu komunikáciu zachytáva útočník, ktorý používa certifikát pre iné webové stránky, a spôsobuje tak chybu. Ďalším možným dôvodom je, že server je nastavený tak, aby vrátil rovnaký certifikát pre viacero rôznych webových stránok vrátane tých, ktoré sa pokúšate navštíviť, a to aj napriek tomu, že tento certifikát nie je platný pre všetky webové stránky. Prehliadač BitPop môže s istotou potvrdiť, že ste sa dostali na doménu &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, no nemôže overiť, že sa jedná o rovnaké stránky ako &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, na ktoré ste sa chceli dostať. Ak budete pokračovať, nebude prehliadač BitPop v budúcnosti kontrolovať žiadne nezhody v názvoch.</translation>
+<translation id="2423180989259159758">Prejdite na
           <ph name="BEGIN_BOLD"/>
-          ponuku Chromium &gt;
+          ponuku BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -59,59 +58,59 @@ Niektoré funkcie nemusia byť k dispozícii a zmeny vykonané v predvoľbách s
           nastavenia siete LAN
           <ph name="END_BOLD"/>
           a zrušte začiarknutie políčka Používať server proxy pre sieť LAN.</translation>
-<translation id="4330585738697551178">Tento modul zvykne spôsobovať konflikt s prehliadačom Chromium.</translation>
-<translation id="3190315855212034486">Prehliadač Chromium zlyhal. Chcete ho spustiť znova?</translation>
-<translation id="6714487516757221107">Nenašla sa žiadna inštalácia prehliadača Chromium ani aplikácie Chromium Frame, ktorú by bolo možné aktualizovať.</translation>
+<translation id="2886079192271351730">Tento modul zvykne spôsobovať konflikt s prehliadačom BitPop.</translation>
+<translation id="8324687802311409372">Prehliadač BitPop zlyhal. Chcete ho spustiť znova?</translation>
+<translation id="606385048658239900">Nenašla sa žiadna inštalácia prehliadača BitPop ani aplikácie BitPop Frame, ktorú by bolo možné aktualizovať.</translation>
 <translation id="3197823471738295152">Zariadenie bolo aktualizované.</translation>
 <translation id="8551886023433311834">Aktualizácia je takmer hotová! Dokončíte ju reštartovaním zariadenia.</translation>
-<translation id="8353224596138547809">Chcete, aby aplikácia Chromium uložila heslo pre tieto stránky?</translation>
+<translation id="9090519209458031409">Chcete, aby aplikácia BitPop uložila heslo pre tieto stránky?</translation>
 <translation id="7339898014177206373">Nové okno</translation>
 <translation id="3026202950002788510">Prejdite na možnosť
           <ph name="BEGIN_BOLD"/>
           Aplikácie &gt; Systémové predvoľby &gt; Sieť &gt; Rozšírené nastavenia &gt; Servery proxy
           <ph name="END_BOLD"/>
           a zrušte výber všetkých vybratých serverov proxy.</translation>
-<translation id="4124681358536363708">Inštalačný adresár prehliadača Chromium sa používa. Reštartujte počítač a skúste to znova.</translation>
-<translation id="8770560772173120024">Prehliadač Chromium práve importuje Obľúbené položky/Záložky.</translation>
+<translation id="85540521058185027">Inštalačný adresár prehliadača BitPop sa používa. Reštartujte počítač a skúste to znova.</translation>
+<translation id="5710380450759072582">Prehliadač BitPop práve importuje Obľúbené položky/Záložky.</translation>
 <translation id="225614027745146050">Vitajte</translation>
-<translation id="9191268552238695869">Správca do tohto systému nainštaloval prehliadač Chromium a je k dispozícii pre všetkých používateľov. Prehliadač Chromium na úrovni systému nahradí vašu inštaláciu na úrovni používateľa.</translation>
-<translation id="3509308970982693815">Zatvorte všetky okná prehliadača Chromium a skúste to znova.</translation>
-<translation id="4077262827416206768">Ak chcete, aby sa prejavila táto zmena, uzavrite všetky okná prehliadača Chromium a znova ho spustite.</translation>
-<translation id="6944967875980567883">Moduly načítané do prehliadača Chromium</translation>
-<translation id="118298050220780080">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát vydaný osobou, ktorej operačný systém vo vašom počítači nedôveruje. Môže to znamenať, že server si vygeneroval vlastné bezpečnostné poverenia, na ktoré sa prehliadač Chromium v súvislosti s informáciami o totožnosti nemôže spoľahnúť, alebo že nejaký útočník sa pokúša zachytávať vašu komunikáciu.</translation>
-<translation id="3296368748942286671">Po zatvorení prehliadača Chromium ponechať spustené aplikácie na pozadí</translation>
+<translation id="3421246989510066651">Správca do tohto systému nainštaloval prehliadač BitPop a je k dispozícii pre všetkých používateľov. Prehliadač BitPop na úrovni systému nahradí vašu inštaláciu na úrovni používateľa.</translation>
+<translation id="1563133725769368154">Zatvorte všetky okná prehliadača BitPop a skúste to znova.</translation>
+<translation id="6948146312619379712">Ak chcete, aby sa prejavila táto zmena, uzavrite všetky okná prehliadača BitPop a znova ho spustite.</translation>
+<translation id="5845248948746043578">Moduly načítané do prehliadača BitPop</translation>
+<translation id="4718546117684412327">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát vydaný osobou, ktorej operačný systém vo vašom počítači nedôveruje. Môže to znamenať, že server si vygeneroval vlastné bezpečnostné poverenia, na ktoré sa prehliadač BitPop v súvislosti s informáciami o totožnosti nemôže spoľahnúť, alebo že nejaký útočník sa pokúša zachytávať vašu komunikáciu.</translation>
+<translation id="2585492770508769131">Po zatvorení prehliadača BitPop ponechať spustené aplikácie na pozadí</translation>
 <translation id="473775607612524610">Aktualizovať</translation>
-<translation id="6055895534982063517">K dispozícii je nová verzia prehliadača Chromium, ktorá je rýchlejšia ako kedykoľvek predtým.</translation>
-<translation id="2407806170074302369">Informácie o aplikácii Chromium Frame</translation>
-<translation id="5405650547142096840">Odstrániť z prehliadača Chromium</translation>
+<translation id="1141543168124987471">K dispozícii je nová verzia prehliadača BitPop, ktorá je rýchlejšia ako kedykoľvek predtým.</translation>
+<translation id="6560811749587757293">Informácie o aplikácii BitPop Frame</translation>
+<translation id="5971960158340115871">Odstrániť z prehliadača BitPop</translation>
 <translation id="7747138024166251722">Inštalátor nemohol vytvoriť dočasný priečinok. Skontrolujte úroveň zaplnenia disku a povolenie na inštaláciu softvéru.</translation>
-<translation id="3258596308407688501">Prehliadač Chromium nemôže čítať ani zapisovať do adresára s údajmi:
+<translation id="6494656531179085521">Prehliadač BitPop nemôže čítať ani zapisovať do adresára s údajmi:
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="4932687624772039103">Chromium nepodporuje systém <ph name="OS_NAME"/> .</translation>
+<translation id="7911731442009818211">BitPop nepodporuje systém <ph name="OS_NAME"/> .</translation>
 <translation id="8738921060445980047">Neznáma verzia.</translation>
 <translation id="6970811910055250180">Prebieha aktualizácia zariadenia...</translation>
 <translation id="2485422356828889247">Odinštalovať</translation>
-<translation id="85843667276690461">Získajte pomoc pri používaní prehliadača Chromium</translation>
-<translation id="263863604136125912">Spustiť prehliadač Chromium</translation>
-<translation id="2881203820889150661">Prehliadač Chromium nemôže vytvoriť odkaz aplikácie, pretože nemôže určiť aktuálne prostredie pracovnej plochy.</translation>
-<translation id="4886158514168859177">Tento počítač už obsahuje novšiu verziu aplikácie Chromium Frame. Ak softvér nefunguje, odinštalujte aplikáciu Chromium Frame a skúste to znova.</translation>
+<translation id="8450502629618876351">Získajte pomoc pri používaní prehliadača BitPop</translation>
+<translation id="4742066939161073105">Spustiť prehliadač BitPop</translation>
+<translation id="736882515641604854">Prehliadač BitPop nemôže vytvoriť odkaz aplikácie, pretože nemôže určiť aktuálne prostredie pracovnej plochy.</translation>
+<translation id="7209647769822542891">Tento počítač už obsahuje novšiu verziu aplikácie BitPop Frame. Ak softvér nefunguje, odinštalujte aplikáciu BitPop Frame a skúste to znova.</translation>
 <translation id="911206726377975832">Chcete tiež odstrániť svoje údaje prehliadania?</translation>
-<translation id="1699664235656412242">Zavrite všetky okná Chromium (vrátane okien v režime systému Windows 8) a skúste to znova.</translation>
-<translation id="6734080038664603509">Aktualizovať prehliadač &amp;Chromium</translation>
+<translation id="4501582071990606935">Zavrite všetky okná BitPop (vrátane okien v režime systému Windows 8) a skúste to znova.</translation>
+<translation id="2318017154298876822">Aktualizovať prehliadač &amp;BitPop</translation>
 <translation id="8862326446509486874">Nemáte potrebné práva na inštaláciu na úrovni systému. Skúste inštalátor spustiť znova ako správca.</translation>
-<translation id="1774152462503052664">Povoliť prehliadaču Chromium spustenie na pozadí</translation>
-<translation id="9022552996538154597">Prihlásiť sa do prehliadača Chromium</translation>
+<translation id="8308846639737830860">Povoliť prehliadaču BitPop spustenie na pozadí</translation>
+<translation id="8251642411216619957">Prihlásiť sa do prehliadača BitPop</translation>
 <translation id="4365115785552740256">Prehliadač Chromium mohol vzniknúť vďaka projektu s otvoreným zdrojom <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> a ďalšiemu <ph name="BEGIN_LINK_OSS"/>softvéru s otvoreným zdrojom<ph name="END_LINK_OSS"/> .</translation>
-<translation id="6248213926982192922">Nastavte Chromium ako svoj predvolený prehliadač</translation>
-<translation id="7337881442233988129">Chromium</translation>
-<translation id="3069161343438701711">Chromium Worker</translation>
+<translation id="6321973207566602686">Nastavte BitPop ako svoj predvolený prehliadač</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="6572431599095627851">BitPop Worker</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="6757767188268205357">Nezobrazovať výzvu</translation>
-<translation id="7294284502435423183">Skúste zakázať predvídanie siete podľa týchto pokynov:
+<translation id="6312770669638222416">Skúste zakázať predvídanie siete podľa týchto pokynov:
         Prejdite na
         <ph name="BEGIN_BOLD"/>
-        ponuku Chromium &gt;
+        ponuku BitPop &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
@@ -119,39 +118,39 @@ Niektoré funkcie nemusia byť k dispozícii a zmeny vykonané v predvoľbách s
         a zrušte výber položky <ph name="NO_PREFETCH_DESCRIPTION"/>.
         Ak sa tým problém nevyrieši, odporúčame túto možnosť vybrať znova
         s cieľom zlepšenia výkonnosti.</translation>
-<translation id="275588974610408078">Správy o zlyhaní nie sú v prehliadači Chromium k dispozícii.</translation>
-<translation id="5909170354645388250">V prehliadači Chromium sa nepoužíva. Zástupný znak na zachovanie synchronizácie máp zdroja. Očakáva jeden argument: $1.</translation>
-<translation id="3582788516608077514">Prebieha aktualizácia prehliadača Chromium...</translation>
-<translation id="7223968959479464213">Správca úloh – Chromium</translation>
-<translation id="3838208658251026018">Prehliadač Chromium momentálne importuje nasledujúce položky z priečinka <ph name="BROWSER_COMPONENT"/>:</translation>
-<translation id="6638567566961868659">Záložky nájdete v ponuke Chromium alebo na paneli so záložkami.</translation>
-<translation id="2673087257647337101">Prehliadač už je skoro aktualizovaný. Proces dokončíte reštartovaním prehliadača Chromium.</translation>
-<translation id="5398878173008909840">K dispozícii je nová verzia prehliadača Chromium.</translation>
-<translation id="2648074677641340862">V priebehu inštalácie sa vyskytla chyba operačného systému. Prevezmite prehliadač Chromium znova.</translation>
-<translation id="5942520288919337908">Rozšírenie <ph name="EXTENSION_NAME"/> bolo pridané do prehliadača Chromium.</translation>
-<translation id="8678787945719392857">Chcete tento účet Google použiť na synchronizáciu všetkých položiek prehliadača Chromium?</translation>
-<translation id="8621669128220841554">Inštalácia zlyhala kvôli neznámej chybe. Skúste prehliadač Chromium prevziať znova.</translation>
-<translation id="6717134281241384636">Váš profil sa nedá použiť, pretože pochádza z novšej verzie prehliadača Chromium.
+<translation id="6220055452245182274">Správy o zlyhaní nie sú v prehliadači BitPop k dispozícii.</translation>
+<translation id="924450301557116466">V prehliadači BitPop sa nepoužíva. Zástupný znak na zachovanie synchronizácie máp zdroja. Očakáva jeden argument: $1.</translation>
+<translation id="1984238998837921833">Prebieha aktualizácia prehliadača BitPop...</translation>
+<translation id="9102885271730191378">Správca úloh – BitPop</translation>
+<translation id="3916917357864849352">Prehliadač BitPop momentálne importuje nasledujúce položky z priečinka <ph name="BROWSER_COMPONENT"/>:</translation>
+<translation id="5243897687251941678">Záložky nájdete v ponuke BitPop alebo na paneli so záložkami.</translation>
+<translation id="5925519479755588070">Prehliadač už je skoro aktualizovaný. Proces dokončíte reštartovaním prehliadača BitPop.</translation>
+<translation id="4352003675682958984">K dispozícii je nová verzia prehliadača BitPop.</translation>
+<translation id="8972540218839637401">V priebehu inštalácie sa vyskytla chyba operačného systému. Prevezmite prehliadač BitPop znova.</translation>
+<translation id="8935838934328341225">Rozšírenie <ph name="EXTENSION_NAME"/> bolo pridané do prehliadača BitPop.</translation>
+<translation id="8871841738132225233">Chcete tento účet Google použiť na synchronizáciu všetkých položiek prehliadača BitPop?</translation>
+<translation id="8988481325911971852">Inštalácia zlyhala kvôli neznámej chybe. Skúste prehliadač BitPop prevziať znova.</translation>
+<translation id="660036136456272595">Váš profil sa nedá použiť, pretože pochádza z novšej verzie prehliadača BitPop.
 
-Niektoré funkcie nemusia byť k dispozícii. Zadajte iný adresár profilu alebo použite novšiu verziu prehliadača Chromium.</translation>
+Niektoré funkcie nemusia byť k dispozícii. Zadajte iný adresár profilu alebo použite novšiu verziu prehliadača BitPop.</translation>
 <translation id="2712549016134575851">Zistil sa konflikt s inou nainštalovanou aplikáciou.</translation>
-<translation id="4881709374218686648">V minulosti ste sa prihlásili s iným účtom. Prihlásenie spôsobí zlúčenie údajov. Zvážte vytvorenie nového používateľa Chromium pre položky súvisiace so systémom Chromium. Môžete to vykonať prostredníctvom <ph name="BEGIN_LINK"/>stránky nastavení<ph name="END_LINK"/>.</translation>
-<translation id="9013087743919948559">Pridať do prehliadača Chromium</translation>
-<translation id="6212496753309875659">Tento počítač už obsahuje novšiu verziu prehliadača Chromium. Ak softvér nefunguje, odinštalujte prehliadač Chromium a skúste to znova.</translation>
-<translation id="3014684866565908571">Chromium Utility</translation>
+<translation id="1095023322915848441">V minulosti ste sa prihlásili s iným účtom. Prihlásenie spôsobí zlúčenie údajov. Zvážte vytvorenie nového používateľa BitPop pre položky súvisiace so systémom BitPop. Môžete to vykonať prostredníctvom <ph name="BEGIN_LINK"/>stránky nastavení<ph name="END_LINK"/>.</translation>
+<translation id="7862155441175671173">Pridať do prehliadača BitPop</translation>
+<translation id="5594704848342987755">Tento počítač už obsahuje novšiu verziu prehliadača BitPop. Ak softvér nefunguje, odinštalujte prehliadač BitPop a skúste to znova.</translation>
+<translation id="3422131153907641068">BitPop Utility</translation>
 <translation id="1298199220304005244">Získajte pomoc pri používaní systému Chromium OS</translation>
-<translation id="1691304614444223855">Aplikácia Chromium Frame bola aktualizovaná. Znova spustite prehliadač. Verzia prehliadača Chromium: <ph name="TODO_0001"/>, verzia Chromium Frame: <ph name="TODO_0002"/></translation>
+<translation id="8854394556488040390">Aplikácia BitPop Frame bola aktualizovaná. Znova spustite prehliadač. Verzia prehliadača BitPop: <ph name="TODO_0001"/>, verzia Chromium Frame: <ph name="TODO_0002"/></translation>
 <translation id="130631256467250065">Zmeny sa prejavia po ďalšom reštartovaní zariadenia.</translation>
-<translation id="1105130903706696483">Prehliadač Chromium nebol ukončený správne. Ak chcete znova otvoriť stránky, ktoré boli otvorené, kliknite na možnosť Obnoviť.</translation>
-<translation id="1929939181775079593">Chromium nereaguje. Chcete ho spustiť znova?</translation>
+<translation id="2901348058800597589">Prehliadač BitPop nebol ukončený správne. Ak chcete znova otvoriť stránky, ktoré boli otvorené, kliknite na možnosť Obnoviť.</translation>
+<translation id="5653921603290474550">BitPop nereaguje. Chcete ho spustiť znova?</translation>
 <translation id="6089587093203430357">Dynamický režim</translation>
-<translation id="2966088006374919794">Systém Chromium potrebuje na spracovanie odkazov typu <ph name="SCHEME"/> spustiť externú aplikáciu. Typ požadovaného odkazu: <ph name="PROTOLINK"/>.</translation>
+<translation id="2410206016513008786">Systém BitPop potrebuje na spracovanie odkazov typu <ph name="SCHEME"/> spustiť externú aplikáciu. Typ požadovaného odkazu: <ph name="PROTOLINK"/>.</translation>
 <translation id="8046283042877435986">Tieto webové stránky odporúčajú aplikáciu Chromium Frame (už je nainštalovaná).</translation>
-<translation id="6287463253129672858">Nemôžete nainštalovať rovnakú verziu aplikácie Chromium Frame ako je tá, ktorá je momentálne spustená. Zatvorte aplikáciu Chromium Frame a skúste to znova.</translation>
-<translation id="2558235863893655150">Chcete, aby prehliadač Chromium uložil vaše heslo?</translation>
-<translation id="3398522627033804247">Prejdite na
+<translation id="5523374683005655880">Nemôžete nainštalovať rovnakú verziu aplikácie BitPop Frame ako je tá, ktorá je momentálne spustená. Zatvorte aplikáciu BitPop Frame a skúste to znova.</translation>
+<translation id="5574763173398621221">Chcete, aby prehliadač BitPop uložil vaše heslo?</translation>
+<translation id="7730150800475367955">Prejdite na
           <ph name="BEGIN_BOLD"/>
-          ponuku Chromium &gt;
+          ponuku BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="INTERNET_TITLE"/>
@@ -167,16 +166,15 @@ Niektoré funkcie nemusia byť k dispozícii. Zadajte iný adresár profilu aleb
           <ph name="END_BOLD"/>
           karte), kliknite naň a uistite sa, že je vaša konfigurácia
           nastavená na hodnotu Priame.</translation>
-<translation id="1231416733874080281">Zobraziť ponuku Chromium</translation>
-<translation id="1688750314291223739">Ak chcete uložiť svoje prispôsobené funkcie prehliadača na webe a pristupovať k nim z prehliadača Chromium v ktoromkoľvek počítači, nastavte synchronizáciu.</translation>
+<translation id="5387335700352644169">Zobraziť ponuku BitPop</translation>
 <translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
 <translation id="8865765905101981392">Internetový prehliadač</translation>
 <translation id="6424492062988593837">Systém Chromium bol práve vylepšený. K dispozícii je nová verzia.</translation>
-<translation id="2910007522516064972">Informácie o prehliadači &amp;Chromium</translation>
-<translation id="8453117565092476964">Archív inštalácie je poškodený alebo neplatný. Prevezmite prehliadač Chromium znova.</translation>
-<translation id="2162026298602630383">Prejdite na
+<translation id="6385431739515246076">Informácie o prehliadači &amp;BitPop</translation>
+<translation id="7521125380721653484">Archív inštalácie je poškodený alebo neplatný. Prevezmite prehliadač BitPop znova.</translation>
+<translation id="6836892784612884953">Prejdite na
           <ph name="BEGIN_BOLD"/>
-          ponuku Chromium &gt;
+          ponuku BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -184,38 +182,37 @@ Niektoré funkcie nemusia byť k dispozícii. Zadajte iný adresár profilu aleb
           <ph name="PROXIES_TITLE"/>
           <ph name="END_BOLD"/>
           a uistite sa, že je vaša konfigurácia nastavená na hodnotu žiadny server proxy alebo priame.</translation>
-<translation id="3249425904492147663">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát s vypršanou platnosťou. K dispozícii nie sú žiadne informácie o tom, či od dátumu vypršania platnosti došlo k prelomeniu certifikátu alebo nie. Znamená to, že prehliadač Chromium nemôže zaručiť, že komunikujete s doménou &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; a nie s útočníkom. Hodiny vo vašom počítači sú momentálne nastavené na čas <ph name="CURRENT_TIME"/>. je to v poriadku? Ak nie, mali by ste opraviť chybu a obnoviť túto stránku.</translation>
+<translation id="457806999714267838">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát s vypršanou platnosťou. K dispozícii nie sú žiadne informácie o tom, či od dátumu vypršania platnosti došlo k prelomeniu certifikátu alebo nie. Znamená to, že prehliadač BitPop nemôže zaručiť, že komunikujete s doménou &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; a nie s útočníkom. Hodiny vo vašom počítači sú momentálne nastavené na čas <ph name="CURRENT_TIME"/>. je to v poriadku? Ak nie, mali by ste opraviť chybu a obnoviť túto stránku.</translation>
 <translation id="7196020411877309443">Prečo sa zobrazila táto výzva?</translation>
-<translation id="7483335560992089831">Nemôžete nainštalovať rovnakú verziu prehliadača Chromium ako je tá, ktorá je momentálne spustená. Zatvorte prehliadač Chromium a skúste to znova.</translation>
-<translation id="7641113255207688324">Prehliadač Chromium nie je váš predvolený prehliadač.</translation>
-<translation id="6208388956150196549">Chromium Apps Launcher</translation>
+<translation id="473359818469623008">Nemôžete nainštalovať rovnakú verziu prehliadača BitPop ako je tá, ktorá je momentálne spustená. Zatvorte prehliadač BitPop a skúste to znova.</translation>
+<translation id="2595850371931815386">Prehliadač BitPop nie je váš predvolený prehliadač.</translation>
+<translation id="1857156280997837230">BitPop Apps Launcher</translation>
 <translation id="4458285410772214805">Ak chcete, aby sa zmeny prejavili, odhláste sa a znova sa prihláste.</translation>
-<translation id="9109696651501887488">Zobraziť odkaz na aplikáciu Chromium Apps Launcher na paneli úloh systému Windows.</translation>
+<translation id="6523007289492675308">Zobraziť odkaz na aplikáciu BitPop Apps Launcher na paneli úloh systému Windows.</translation>
 <translation id="2119636228670142020">Informácie o systéme &amp;Chromium OS</translation>
-<translation id="1708666629004767631">K dispozícii je nová bezpečnejšia verzia prehliadača Chromium.</translation>
-<translation id="1539981464052805551">Copyright 2013 Autori Chromium. Všetky práva vyhradené.</translation>
-<translation id="6606161915035466984">Zobraziť aplikáciu Chromium Apps Launcher.</translation>
-<translation id="8616882682724010661"><ph name="BEGIN_LINK"/>Ďalšie výhody<ph name="END_LINK"/> prihlásenia do prehliadača Chromium.</translation>
-<translation id="378917192836375108">Prehliadač Chromium vám umožňuje vybrať telefónne číslo na webe a zavolať naň pomocou aplikácie Skype.</translation>
-<translation id="8724049448828509830">Prebieha preberanie. Chcete Chromium ukončiť a preberanie zrušiť?</translation>
-<translation id="3360567213983886831">Chromium Binaries</translation>
-<translation id="7503101070699687603">Chromium Plug-In Host</translation>
-<translation id="2739631515503418643">Prebieha preberanie. Chcete Chromium ukončiť a preberanie zrušiť?</translation>
-<translation id="9013262824292842194">Prehliadač Chromium vyžaduje systém Windows Vista alebo Windows XP s balíkom SP2 alebo vyšším.</translation>
-<translation id="1967743265616885482">Zistilo sa, že modul s rovnakým názvom spôsobuje konflikt s prehliadačom Chromium.</translation>
-<translation id="4224199872375172890">Prehliadač Chromium bol aktualizovaný.</translation>
-<translation id="374481098568514319">V tomto počítači sa už používa novšia verzia komponentov aplikácie Chromium. Použite novší inštalátor.</translation>
-<translation id="6240281849816458190">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát, ktorý ešte nie je platný. K dispozícii nie sú žiadne informácie o tom, či je tento certifikát dôveryhodný alebo nie. Aplikácia Chromium nemôže zaručiť, že komunikujete s doménou &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a nie s útočníkom. Hodiny vo vašom počítači sú momentálne nastavené na čas <ph name="CURRENT_TIME"/>. Je to v poriadku? Ak nie, mali by ste hodiny systému opraviť a túto stránku obnoviť.</translation>
-<translation id="5498103559159810756">Prehliadač Chromium používa váš predvolený vyhľadávací nástroj, ktorý je v súčasnosti nastavený na <ph name="PAGE_TITLE"/>. Chcete ponechať predvolený vyhľadávací nástroj?</translation>
-<translation id="5862307444128926510">Vitajte v prehliadači Chromium</translation>
-<translation id="1622565934590470080">Tento počítač už obsahuje novšiu verziu prehliadača Chromium s aplikáciou Chromium Frame. Ak softvér nefunguje, odinštalujte prehliadač Chromium aj aplikáciu Chromium Frame a skúste to znova.</translation>
-<translation id="7318036098707714271">Súbor predvolieb je poškodený alebo neplatný. 
+<translation id="4196382931981526364">K dispozícii je nová bezpečnejšia verzia prehliadača BitPop.</translation>
+<translation id="1077424736315176936">Zobraziť aplikáciu BitPop Apps Launcher.</translation>
+<translation id="5330935702921516708"><ph name="BEGIN_LINK"/>Ďalšie výhody<ph name="END_LINK"/> prihlásenia do prehliadača BitPop.</translation>
+<translation id="862266784641000464">Prehliadač BitPop vám umožňuje vybrať telefónne číslo na webe a zavolať naň pomocou aplikácie Skype.</translation>
+<translation id="8072591166076742072">Prebieha preberanie. Chcete BitPop ukončiť a preberanie zrušiť?</translation>
+<translation id="932207424499184915">BitPop Binaries</translation>
+<translation id="3223104112377435850">BitPop Plug-In Host</translation>
+<translation id="7826309952950470209">Prebieha preberanie. Chcete BitPop ukončiť a preberanie zrušiť?</translation>
+<translation id="380873736468525691">Prehliadač BitPop vyžaduje systém Windows Vista alebo Windows XP s balíkom SP2 alebo vyšším.</translation>
+<translation id="2762974284703971745">Zistilo sa, že modul s rovnakým názvom spôsobuje konflikt s prehliadačom BitPop.</translation>
+<translation id="5443433498537176573">Prehliadač BitPop bol aktualizovaný.</translation>
+<translation id="5637727561937246825">V tomto počítači sa už používa novšia verzia komponentov aplikácie BitPop. Použite novší inštalátor.</translation>
+<translation id="5082591353921977637">Pokúšali ste sa dostať na doménu &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ale server poskytol certifikát, ktorý ešte nie je platný. K dispozícii nie sú žiadne informácie o tom, či je tento certifikát dôveryhodný alebo nie. Aplikácia BitPop nemôže zaručiť, že komunikujete s doménou &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a nie s útočníkom. Hodiny vo vašom počítači sú momentálne nastavené na čas <ph name="CURRENT_TIME"/>. Je to v poriadku? Ak nie, mali by ste hodiny systému opraviť a túto stránku obnoviť.</translation>
+<translation id="1138135211676039883">Prehliadač BitPop používa váš predvolený vyhľadávací nástroj, ktorý je v súčasnosti nastavený na <ph name="PAGE_TITLE"/>. Chcete ponechať predvolený vyhľadávací nástroj?</translation>
+<translation id="185658551912723674">Vitajte v prehliadači BitPop</translation>
+<translation id="6808688532552992663">Tento počítač už obsahuje novšiu verziu prehliadača BitPop s aplikáciou BitPop Frame. Ak softvér nefunguje, odinštalujte prehliadač BitPop aj aplikáciu BitPop Frame a skúste to znova.</translation>
+<translation id="1909867102505992367">Súbor predvolieb je poškodený alebo neplatný.
 
-Prehliadač Chromium nedokáže obnoviť vaše nastavenia.</translation>
-<translation id="6403826409255603130">Chromium je webový prehliadač, ktorý spúšťa webové stránky a aplikácie rýchlosťou svetla. Je rýchly, stabilný a ľahko sa používa. S ochranou proti škodlivému softvéru a phishingu, ktorá je zabudovaná do prehliadača Chromium, môžete prehliadať web bezpečnejšie.</translation>
-<translation id="2927042866129133279">Argumenty sú neplatné. Aplikáciu Chromium Frame nie je možné nainštalovať v režime pripravenom na použitie bez súčasnej inštalácie prehliadača Chromium.</translation>
-<translation id="2572494885440352020">Chromium Helper</translation>
-<translation id="442817494342774222">Prehliadač Chromium je nakonfigurovaný tak, aby sa automaticky spustil pri zapnutí počítača.</translation>
+Prehliadač BitPop nedokáže obnoviť vaše nastavenia.</translation>
+<translation id="4933902704814222889">BitPop je webový prehliadač, ktorý spúšťa webové stránky a aplikácie rýchlosťou svetla. Je rýchly, stabilný a ľahko sa používa. S ochranou proti škodlivému softvéru a phishingu, ktorá je zabudovaná do prehliadača BitPop, môžete prehliadať web bezpečnejšie.</translation>
+<translation id="7673336527696184948">Argumenty sú neplatné. Aplikáciu BitPop Frame nie je možné nainštalovať v režime pripravenom na použitie bez súčasnej inštalácie prehliadača BitPop.</translation>
+<translation id="5583217122091744450">BitPop Helper</translation>
+<translation id="6404599307042403560">Prehliadač BitPop je nakonfigurovaný tak, aby sa automaticky spustil pri zapnutí počítača.</translation>
 <translation id="8974095189086268230">Prehliadač Chromium mohol vzniknúť vďaka ďalšiemu <ph name="BEGIN_LINK_CROS_OSS"/>softvéru s otvoreným zdrojom<ph name="END_LINK_CROS_OSS"/> .</translation>
 <translation id="1221340462641866827">Systém Chromium OS nepodporuje spustenie externej aplikácie na spracovanie odkazov typu <ph name="SCHEME"/>. Typ požadovaného odkazu: <ph name="PROTOLINK"/>.</translation>
 </translationbundle>

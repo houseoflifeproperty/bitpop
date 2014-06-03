@@ -292,13 +292,14 @@ html[dir='rtl'] #learn-more-link {
 
 #signin-header-logo {
   background: transparent
-      url('chrome://resources/images/google-transparent.png') no-repeat;
+      url('chrome://resources/images/logo.png') no-repeat;
+  background-size: cover;
   display: inline-block;
-  height: 19px;
+  height: 32px;
   position: absolute;
   right: 0;
   top: 1px;
-  width: 52px;
+  width: 32px;
 }
 
 html[dir='rtl'] #signin-header-logo {
@@ -480,6 +481,7 @@ html[dir='rtl'] .signin-box .throbber {
   font-size: 13px !important;
   line-height: 17px;
   margin: 0.5em 0 1.5em;
+  text-align: center;
 }
 
 .signin-box .help-link {
@@ -501,4 +503,13 @@ html[dir='rtl'] .signin-box .throbber {
 .signin-box .help-link:hover {
   color: white !important;
   opacity: .7;
+}
+
+#sync-passphrase-ui-toggler {
+  margin: 0;
+  padding: 0;
+}
+
+.logout-facebook-checkbox-wrap {
+  margin-top: 15px;
 }

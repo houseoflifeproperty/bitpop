@@ -1,53 +1,52 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="pt-BR">
 <translation id="6676384891291319759">Acessar a internet</translation>
-<translation id="6373523479360886564">Tem certeza de que deseja desinstalar o Chromium?</translation>
-<translation id="6510925080656968729">Desinstalar Chromium</translation>
-<translation id="6893813176749746474">O Chromium foi atualizado, mas não é utilizado há pelo menos 30 dias.</translation>
-<translation id="1550579416447684632">Iniciar aplicativos Chromium</translation>
-<translation id="4267347018362241535">O Iniciador de aplicativos Chromium é uma plataforma autônoma para aplicativos Chromium.</translation>
+<translation id="8447784615389818621">Tem certeza de que deseja desinstalar o BitPop?</translation>
+<translation id="100741878661450640">Desinstalar BitPop</translation>
+<translation id="4301276314211054820">O BitPop foi atualizado, mas não é utilizado há pelo menos 30 dias.</translation>
+<translation id="8935261719622405725">Iniciar aplicativos BitPop</translation>
+<translation id="2556535128417126306">O Iniciador de aplicativos BitPop é uma plataforma autônoma para aplicativos BitPop.</translation>
 <translation id="2770231113462710648">Alterar navegador padrão para:</translation>
-<translation id="6613594504749178791">As alterações entrarão em vigor na próxima vez que você reiniciar o Chromium.</translation>
-<translation id="3748537968684000502">Você está vendo uma página segura do Chromium.</translation>
-<translation id="8971920611044657379">Chromium Frame</translation>
+<translation id="6870152852581894991">As alterações entrarão em vigor na próxima vez que você reiniciar o BitPop.</translation>
+<translation id="3588014340702790340">Você está vendo uma página segura do BitPop.</translation>
+<translation id="6789998774111513164">BitPop Frame</translation>
 <translation id="1065672644894730302">Não foi possível ler suas preferências. Alguns recursos podem não estar disponíveis e as alterações nas preferências não serão salvas.</translation>
-<translation id="4222661289444749267">Atualização do Chromium Frame.</translation>
-<translation id="2843244238218937196">Renderizador do Chromium</translation>
-<translation id="7128196614940529818">O Chromium Frame já está instalado e disponível para todos os usuários deste computador. Se você deseja instalar o Chromium Frame no nível de usuário, deve primeiro desinstalar a versão do sistema instalada por um administrador.</translation>
+<translation id="4901429675189043920">Atualização do BitPop Frame.</translation>
+<translation id="1132852132282742543">Renderizador do BitPop</translation>
+<translation id="7155774694068736041">O BitPop Frame já está instalado e disponível para todos os usuários deste computador. Se você deseja instalar o BitPop Frame no nível de usuário, deve primeiro desinstalar a versão do sistema instalada por um administrador.</translation>
 <translation id="731644333568559921">Atualizar o &amp;Chromium OS</translation>
-<translation id="7421823331379285070">O Chromium requer Windows XP ou posterior. Alguns recursos podem não funcionar.</translation>
+<translation id="5284421695473942517">O BitPop requer Windows XP ou posterior. Alguns recursos podem não funcionar.</translation>
 <translation id="3549345495227188780">Primeiros passos com o Chromium OS</translation>
-<translation id="4330297532943865716">Uma instalação conflitante do Chromium ou Chromium Frame foi encontrada no sistema. Desinstale-a e tente novamente.</translation>
-<translation id="6953661834318318668">Barra de ferramentas do Chromium</translation>
-<translation id="7097100943370017396">O Chromium não está mais sendo atualizado porque seu sistema operacional está obsoleto.</translation>
-<translation id="2245147136185581459">Detector de portal prisioneiro do Chromium</translation>
-<translation id="4285930937574705105">Ocorreu uma falha na instalação devido a um erro não especificado. Se o Chromium estiver sendo executado, feche-o e tente novamente.</translation>
-<translation id="2589479092236095792">Configurações de preenchimento automático do Chromium</translation>
-<translation id="658492233547000995">Use o Iniciador de aplicativos Chromium para iniciar seus aplicativos.</translation>
+<translation id="8363397932717822970">Uma instalação conflitante do BitPop ou BitPop Frame foi encontrada no sistema. Desinstale-a e tente novamente.</translation>
+<translation id="8235603028098851915">Barra de ferramentas do BitPop</translation>
+<translation id="5953515305183787825">O BitPop não está mais sendo atualizado porque seu sistema operacional está obsoleto.</translation>
+<translation id="7230682351542979557">Detector de portal prisioneiro do BitPop</translation>
+<translation id="325440606879482824">Ocorreu uma falha na instalação devido a um erro não especificado. Se o BitPop estiver sendo executado, feche-o e tente novamente.</translation>
+<translation id="7224939653007212692">Configurações de preenchimento automático do BitPop</translation>
+<translation id="3078552028547324322">Use o Iniciador de aplicativos BitPop para iniciar seus aplicativos.</translation>
 <translation id="3555616473548901994">Desinstalação concluída.</translation>
-<translation id="3674409928058572366">Chromium App Host</translation>
-<translation id="2886012850691518054">Opcional: Ajude a tornar o Chromium melhor enviando automaticamente as estatísticas de uso e os relatórios de erros ao Google.</translation>
-<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
-<translation id="1989424089625731201">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o certificado apresentado pelo servidor contém erros. O Chromium não pode usar um certificado com erros e não pode validar a identidade do site que você tentou se conectar.</translation>
-<translation id="3103660991484857065">Ocorreu uma falha no instalador ao descompactar o arquivo. Faça o download do Chromium novamente.</translation>
-<translation id="872034308864968620">Permitir que o Chromium seja executado em segundo plano</translation>
-<translation id="5109068449432240255">Sim, sair do Chromium</translation>
-<translation id="4320129595801648679">A página Nova guia do Chromium foi remodelada. Alterne entre as seções clicando nesses marcadores. O Chromium lembrará da sua preferência na próxima vez.</translation>
+<translation id="5814137742095860156">BitPop App Host</translation>
+<translation id="9205983754412543288">Opcional: Ajude a tornar o BitPop melhor enviando automaticamente as estatísticas de uso e os relatórios de erros ao Google.</translation>
+<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="6259082392093297310">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o certificado apresentado pelo servidor contém erros. O BitPop não pode usar um certificado com erros e não pode validar a identidade do site que você tentou se conectar.</translation>
+<translation id="3801183610358973379">Ocorreu uma falha no instalador ao descompactar o arquivo. Faça o download do BitPop novamente.</translation>
+<translation id="4450789702440326676">Permitir que o BitPop seja executado em segundo plano</translation>
+<translation id="2963590958538393837">Sim, sair do BitPop</translation>
+<translation id="8031724302809093115">A página Nova guia do BitPop foi remodelada. Alterne entre as seções clicando nesses marcadores. O Chromium lembrará da sua preferência na próxima vez.</translation>
 <translation id="1480489203462860648">Experimente, já está instalado</translation>
-<translation id="3032787606318309379">Adicionando ao Chromium...</translation>
-<translation id="4831257561365056138">Desinstalar Iniciador de aplicativos Chromium</translation>
-<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Aviso:<ph name="END_BOLD"/> O Chromium não pode impedir que as extensões gravem seu histórico de navegação. Para desativar esta extensão no modo anônimo, desmarque esta opção.</translation>
-<translation id="985602178874221306">Autores do Chromium</translation>
-<translation id="8628626585870903697">O Chromium não inclui o visualizador de PDF que é necessário para que a visualização de impressão funcione.</translation>
-<translation id="7138853919861947730">O Chromium pode usar os serviços da web para melhorar sua experiência de navegação.</translation>
-<translation id="466053073629175099">Você já está conectado ao Chromium! Seus favoritos, histórico e outras configurações serão sincronizados com sua Conta do Google.</translation>
-<translation id="4179848566211676653">Sair do Chromium</translation>
-<translation id="3849925841547750267">Suas configurações do Mozilla Firefox não ficam disponíveis enquanto esse navegador é executado. Para importar essas configurações para o Chromium, salve seu trabalho e feche todas as janelas do Firefox. Em seguida, clique em Continuar.</translation>
-<translation id="7771626876550251690">Neste caso, o endereço listado no certificado não corresponde ao endereço do website que seu navegador tentou acessar. Uma possível razão para isso é suas comunicações estarem sendo interceptadas por um invasor que está apresentando um certificado para outro site, o que causa incompatibilidade. Outra possível razão é o servidor estar configurado para retornar o mesmo certificado para diversos sites, incluindo o que você está tentando visitar, mesmo que esse certificado não seja válido para todos os websites. O Chromium pode informar que você acessou &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mas não pode confirmar se esse é o mesmo site que &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; que você pretendia acessar. Se você continuar, o Chromium não verificará se há outras incompatibilidades de nome.</translation>
-<translation id="2401271577450445716">Vá para o
+<translation id="7098153548331126805">Adicionando ao BitPop...</translation>
+<translation id="5928487969163300899">Desinstalar Iniciador de aplicativos BitPop</translation>
+<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Aviso:<ph name="END_BOLD"/> O BitPop não pode impedir que as extensões gravem seu histórico de navegação. Para desativar esta extensão no modo anônimo, desmarque esta opção.</translation>
+<translation id="3941397373453695568">O BitPop não inclui o visualizador de PDF que é necessário para que a visualização de impressão funcione.</translation>
+<translation id="8155571637339134666">O BitPop pode usar os serviços da web para melhorar sua experiência de navegação.</translation>
+<translation id="5383732173730790693">Você já está conectado ao BitPop! Seus favoritos, histórico e outras configurações serão sincronizados com sua Conta do Google.</translation>
+<translation id="6866316083935040427">Sair do BitPop</translation>
+<translation id="4759775690587852534">Suas configurações do Mozilla Firefox não ficam disponíveis enquanto esse navegador é executado. Para importar essas configurações para o BitPop, salve seu trabalho e feche todas as janelas do Firefox. Em seguida, clique em Continuar.</translation>
+<translation id="2411757162791070146">Neste caso, o endereço listado no certificado não corresponde ao endereço do website que seu navegador tentou acessar. Uma possível razão para isso é suas comunicações estarem sendo interceptadas por um invasor que está apresentando um certificado para outro site, o que causa incompatibilidade. Outra possível razão é o servidor estar configurado para retornar o mesmo certificado para diversos sites, incluindo o que você está tentando visitar, mesmo que esse certificado não seja válido para todos os websites. O BitPop pode informar que você acessou &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mas não pode confirmar se esse é o mesmo site que &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; que você pretendia acessar. Se você continuar, o BitPop não verificará se há outras incompatibilidades de nome.</translation>
+<translation id="2423180989259159758">Vá para o
 <ph name="BEGIN_BOLD"/>
-menu do Chromium &gt;
+menu do BitPop &gt;
 <ph name="SETTINGS_TITLE"/>
 &gt;
 <ph name="ADVANCED_TITLE"/>
@@ -56,157 +55,155 @@ menu do Chromium &gt;
 &gt;
 Configurações da LAN
 <ph name="END_BOLD"/>
-e desmarque a caixa de seleção &quot;Usar um servidor proxy para a rede local&quot;.</translation>
-<translation id="4330585738697551178">Este módulo é conhecido por entrar em conflito com o Chromium.</translation>
-<translation id="3190315855212034486">O Chromium travou. Reiniciar agora?</translation>
-<translation id="6714487516757221107">Nenhuma instalação do Chromium ou Chromium Frame encontrada para atualizar.</translation>
+e desmarque a caixa de seleção "Usar um servidor proxy para a rede local".</translation>
+<translation id="2886079192271351730">Este módulo é conhecido por entrar em conflito com o BitPop.</translation>
+<translation id="8324687802311409372">O BitPop travou. Reiniciar agora?</translation>
+<translation id="606385048658239900">Nenhuma instalação do BitPop ou BitPop Frame encontrada para atualizar.</translation>
 <translation id="3197823471738295152">O dispositivo está atualizado.</translation>
 <translation id="8551886023433311834">Atualização quase concluída! Reinicie seu dispositivo para concluir a atualização.</translation>
-<translation id="8353224596138547809">Deseja que o Chromium salve sua senha para este site?</translation>
+<translation id="9090519209458031409">Deseja que o BitPop salve sua senha para este site?</translation>
 <translation id="7339898014177206373">Nova janela</translation>
 <translation id="3026202950002788510">Vá para
           <ph name="BEGIN_BOLD"/>
           Aplicativos &gt; Preferências do Sistema &gt; Rede &gt; Avançado &gt; Proxies
           <ph name="END_BOLD"/>
           e desmarque todos os proxies que estiverem selecionados.</translation>
-<translation id="4124681358536363708">O diretório de instalação do Chromium parece estar em uso. Reinicie seu computador e tente novamente.</translation>
-<translation id="8770560772173120024">O Chromium está importando os Favoritos.</translation>
+<translation id="85540521058185027">O diretório de instalação do BitPop parece estar em uso. Reinicie seu computador e tente novamente.</translation>
+<translation id="5710380450759072582">O BitPop está importando os Favoritos.</translation>
 <translation id="225614027745146050">Bem-vindo</translation>
-<translation id="9191268552238695869">Um administrador instalou o Chromium neste sistema, e ele está disponível para todos os usuários. O Chromium do sistema substituirá a instalação do usuário agora.</translation>
-<translation id="3509308970982693815">Feche todas as janelas do Chromium e tente novamente.</translation>
-<translation id="4077262827416206768">Feche todas as janelas do Chromium e reinicie o Chromium para que a alteração entre em vigor.</translation>
-<translation id="6944967875980567883">Módulos carregados no Chromium</translation>
-<translation id="118298050220780080">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado emitido por uma entidade na qual o sistema operacional de seu computador não confia. Isso pode significar que o servidor gerou suas próprias credenciais de segurança, nas quais o Chromium não pode confiar quanto às informações de identificação, ou que um invasor pode estar tentando interceptar suas comunicações.</translation>
-<translation id="3296368748942286671">Continuar executando os aplicativos em segundo plano quando o Chromium for fechado</translation>
+<translation id="3421246989510066651">Um administrador instalou o BitPop neste sistema, e ele está disponível para todos os usuários. O BitPop do sistema substituirá a instalação do usuário agora.</translation>
+<translation id="1563133725769368154">Feche todas as janelas do BitPop e tente novamente.</translation>
+<translation id="6948146312619379712">Feche todas as janelas do BitPop e reinicie o BitPop para que a alteração entre em vigor.</translation>
+<translation id="5845248948746043578">Módulos carregados no BitPop</translation>
+<translation id="4718546117684412327">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado emitido por uma entidade na qual o sistema operacional de seu computador não confia. Isso pode significar que o servidor gerou suas próprias credenciais de segurança, nas quais o BitPop não pode confiar quanto às informações de identificação, ou que um invasor pode estar tentando interceptar suas comunicações.</translation>
+<translation id="2585492770508769131">Continuar executando os aplicativos em segundo plano quando o BitPop for fechado</translation>
 <translation id="473775607612524610">Atualizar</translation>
-<translation id="6055895534982063517">Há uma nova versão ainda mais rápida do Chromium disponível.</translation>
-<translation id="2407806170074302369">Sobre o Chromium Frame...</translation>
-<translation id="5405650547142096840">Remover do Chromium</translation>
+<translation id="1141543168124987471">Há uma nova versão ainda mais rápida do BitPop disponível.</translation>
+<translation id="6560811749587757293">Sobre o BitPop Frame...</translation>
+<translation id="5971960158340115871">Remover do BitPop</translation>
 <translation id="7747138024166251722">O instalador não conseguiu criar um diretório temporário. Verifique se há espaço livre em disco e se há permissão para a instalação de software.</translation>
-<translation id="3258596308407688501">O Chromium não pode ler e gravar neste diretório de dados: <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="4932687624772039103">O Chromium não é compatível com <ph name="OS_NAME"/>.</translation>
+<translation id="6494656531179085521">O BitPop não pode ler e gravar neste diretório de dados: <ph name="USER_DATA_DIRECTORY"/></translation>
+<translation id="7911731442009818211">O BitPop não é compatível com <ph name="OS_NAME"/>.</translation>
 <translation id="8738921060445980047">Versão desconhecida.</translation>
 <translation id="6970811910055250180">Atualizando o dispositivo...</translation>
 <translation id="2485422356828889247">Desinstalar</translation>
-<translation id="85843667276690461">Obter ajuda para usar o Chromium</translation>
-<translation id="263863604136125912">Iniciar Chromium</translation>
-<translation id="2881203820889150661">O Chromium não pode criar um atalho do aplicativo, porque não consegue determinar o ambiente de área de trabalho atual.</translation>
-<translation id="4886158514168859177">Este computador já tem uma versão mais recente do Chromium Frame. Se o software não estiver funcionando, desinstale o Chromium Frame e tente novamente.</translation>
+<translation id="8450502629618876351">Obter ajuda para usar o BitPop</translation>
+<translation id="4742066939161073105">Iniciar BitPop</translation>
+<translation id="736882515641604854">O BitPop não pode criar um atalho do aplicativo, porque não consegue determinar o ambiente de área de trabalho atual.</translation>
+<translation id="7209647769822542891">Este computador já tem uma versão mais recente do BitPop Frame. Se o software não estiver funcionando, desinstale o BitPop Frame e tente novamente.</translation>
 <translation id="911206726377975832">Excluir também dados de navegação?</translation>
-<translation id="1699664235656412242">Feche todas as janelas do Chromium, (incluindo as que estejam no modo Windows 8) e tente novamente.</translation>
-<translation id="6734080038664603509">Atualizar o &amp;Chromium</translation>
+<translation id="4501582071990606935">Feche todas as janelas do BitPop, (incluindo as que estejam no modo Windows 8) e tente novamente.</translation>
+<translation id="2318017154298876822">Atualizar o &amp;BitPop</translation>
 <translation id="8862326446509486874">Você não tem os direitos adequados para instalação no nível do sistema. Tente executar o instalador novamente como administrador.</translation>
-<translation id="1774152462503052664">Permitir que o Chromium seja executado em segundo plano</translation>
-<translation id="9022552996538154597">Fazer login no Chromium</translation>
+<translation id="8308846639737830860">Permitir que o BitPop seja executado em segundo plano</translation>
+<translation id="8251642411216619957">Fazer login no BitPop</translation>
 <translation id="4365115785552740256">O Chromium tornou-se possível graças ao projeto de código aberto <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> e outros <ph name="BEGIN_LINK_OSS"/>softwares de código aberto<ph name="END_LINK_OSS"/>.</translation>
-<translation id="6248213926982192922">Tornar o Chromium o navegador padrão</translation>
-<translation id="7337881442233988129">Chromium</translation>
-<translation id="3069161343438701711">Operador do Chromium</translation>
+<translation id="6321973207566602686">Tornar o BitPop o navegador padrão</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="6572431599095627851">Operador do BitPop</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="6757767188268205357">Não estou a fim</translation>
-<translation id="7294284502435423183">Tente desativar a previsão de rede seguindo estas etapas: 
-Vá para o 
-<ph name="BEGIN_BOLD"/> 
-menu do Chromium &gt;
+<translation id="6312770669638222416">Tente desativar a previsão de rede seguindo estas etapas:
+Vá para o
+<ph name="BEGIN_BOLD"/>
+menu do BitPop &gt;
 <ph name="SETTINGS_TITLE"/>
 &gt;
 <ph name="ADVANCED_TITLE"/>
 <ph name="END_BOLD"/>
-e desmarque &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>&quot;. 
+e desmarque "<ph name="NO_PREFETCH_DESCRIPTION"/>".
 Se isso não resolver o problema, recomendamos selecionar essa opção novamente para melhorar o desempenho.</translation>
-<translation id="275588974610408078">O relatório de erros não está disponível no Chromium.</translation>
-<translation id="5909170354645388250">Não usado no Chromium. Espaço reservado para manter sincronizados os mapas de recursos. Ele espera um argumento: $1.</translation>
-<translation id="3582788516608077514">Atualizando o Chromium....</translation>
-<translation id="7223968959479464213">Gerenciador de tarefas - Chromium</translation>
-<translation id="3838208658251026018">O Chromium está importando os seguintes itens do <ph name="BROWSER_COMPONENT"/>:</translation>
-<translation id="6638567566961868659">Encontre seus favoritos no menu do Chromium ou na barra de favoritos.</translation>
-<translation id="2673087257647337101">Quase atualizado! Reinicie o Chromium para concluir a atualização.</translation>
-<translation id="5398878173008909840">Há uma nova versão do Chromium disponível.</translation>
-<translation id="2648074677641340862">Ocorreu um erro no sistema operacional durante a instalação. Faça o download do Chromium novamente.</translation>
-<translation id="5942520288919337908">A extensão <ph name="EXTENSION_NAME"/> foi adicionada ao Chromium.</translation>
-<translation id="8678787945719392857">Usar esta Conta do Google para sincronizar todos os seus dados do Chromium?</translation>
-<translation id="8621669128220841554">Falha na instalação devido a um erro não especificado. Faça o download do Chromium novamente.</translation>
-<translation id="6717134281241384636">Seu perfil não pode ser usado porque é de uma versão mais recente do Chromium. Alguns recursos podem não estar disponíveis. Especifique outro diretório de perfil ou use uma versão mais recente do Chromium.</translation>
+<translation id="6220055452245182274">O relatório de erros não está disponível no BitPop.</translation>
+<translation id="924450301557116466">Não usado no BitPop. Espaço reservado para manter sincronizados os mapas de recursos. Ele espera um argumento: $1.</translation>
+<translation id="1984238998837921833">Atualizando o BitPop....</translation>
+<translation id="9102885271730191378">Gerenciador de tarefas - BitPop</translation>
+<translation id="3916917357864849352">O BitPop está importando os seguintes itens do <ph name="BROWSER_COMPONENT"/>:</translation>
+<translation id="5243897687251941678">Encontre seus favoritos no menu do BitPop ou na barra de favoritos.</translation>
+<translation id="5925519479755588070">Quase atualizado! Reinicie o BitPop para concluir a atualização.</translation>
+<translation id="4352003675682958984">Há uma nova versão do BitPop disponível.</translation>
+<translation id="8972540218839637401">Ocorreu um erro no sistema operacional durante a instalação. Faça o download do BitPop novamente.</translation>
+<translation id="8935838934328341225">A extensão <ph name="EXTENSION_NAME"/> foi adicionada ao BitPop.</translation>
+<translation id="8871841738132225233">Usar esta Conta do Google para sincronizar todos os seus dados do BitPop?</translation>
+<translation id="8988481325911971852">Falha na instalação devido a um erro não especificado. Faça o download do BitPop novamente.</translation>
+<translation id="660036136456272595">Seu perfil não pode ser usado porque é de uma versão mais recente do BitPop. Alguns recursos podem não estar disponíveis. Especifique outro diretório de perfil ou use uma versão mais recente do BitPop.</translation>
 <translation id="2712549016134575851">Foi detectado um conflito com outro aplicativo instalado.</translation>
-<translation id="4881709374218686648">Anteriormente, você fez login em uma conta diferente. O login mesclará seus dados. Você pode criar um novo usuário do Chromium na <ph name="BEGIN_LINK"/>página de configurações<ph name="END_LINK"/> para suas coisas do Chromium.</translation>
-<translation id="9013087743919948559">Adicionar ao Chromium</translation>
-<translation id="6212496753309875659">Este computador já tem uma versão mais recente do Chromium. Se o software não estiver funcionando, desinstale o Chromium e tente novamente.</translation>
-<translation id="3014684866565908571">Utilitário do Chromium</translation>
+<translation id="1095023322915848441">Anteriormente, você fez login em uma conta diferente. O login mesclará seus dados. Você pode criar um novo usuário do BitPop na <ph name="BEGIN_LINK"/>página de configurações<ph name="END_LINK"/> para suas coisas do BitPop.</translation>
+<translation id="7862155441175671173">Adicionar ao BitPop</translation>
+<translation id="5594704848342987755">Este computador já tem uma versão mais recente do BitPop. Se o software não estiver funcionando, desinstale o BitPop e tente novamente.</translation>
+<translation id="3422131153907641068">Utilitário do BitPop</translation>
 <translation id="1298199220304005244">Obter ajuda para usar o Chromium OS</translation>
-<translation id="1691304614444223855">O Chromium Frame foi atualizado. Reinicie seu navegador. Versão do Chromium: <ph name="TODO_0001"/>, versão do Chromium Frame: <ph name="TODO_0002"/></translation>
+<translation id="8854394556488040390">O BitPop Frame foi atualizado. Reinicie seu navegador. Versão do BitPop: <ph name="TODO_0001"/>, versão do Chromium Frame: <ph name="TODO_0002"/></translation>
 <translation id="130631256467250065">As alterações entrarão em vigor na próxima vez que você reiniciar o dispositivo.</translation>
-<translation id="1105130903706696483">O Chromium não foi encerrado corretamente. Para reabrir as páginas que você tinha aberto, clique em Restaurar.</translation>
-<translation id="1929939181775079593">O Chromium não está respondendo. Reiniciar agora?</translation>
+<translation id="2901348058800597589">O BitPop não foi encerrado corretamente. Para reabrir as páginas que você tinha aberto, clique em Restaurar.</translation>
+<translation id="5653921603290474550">O BitPop não está respondendo. Reiniciar agora?</translation>
 <translation id="6089587093203430357">Instant</translation>
-<translation id="2966088006374919794">O Chromium precisa iniciar um aplicativo externo para lidar com os links <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
+<translation id="2410206016513008786">O BitPop precisa iniciar um aplicativo externo para lidar com os links <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
 <translation id="8046283042877435986">Este site recomenda o Chromium Frame (já instalado).</translation>
-<translation id="6287463253129672858">Não é possível instalar a mesma versão do Chromium Frame que está sendo executada. Feche o Chromium Frame e tente novamente.</translation>
-<translation id="2558235863893655150">Você deseja que o Chromium salve sua senha?</translation>
-<translation id="3398522627033804247">Vá para
+<translation id="5523374683005655880">Não é possível instalar a mesma versão do BitPop Frame que está sendo executada. Feche o BitPop Frame e tente novamente.</translation>
+<translation id="5574763173398621221">Você deseja que o BitPop salve sua senha?</translation>
+<translation id="7730150800475367955">Vá para
           <ph name="BEGIN_BOLD"/>
-          o menu do Chromium &gt;
+          o menu do BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="INTERNET_TITLE"/>
           &gt;
-          &quot;<ph name="OPTIONS_BUTTON"/>&quot;
+          "<ph name="OPTIONS_BUTTON"/>"
           <ph name="END_BOLD"/>
           (para a rede atual). Se o
           <ph name="BEGIN_BOLD"/>
-          &quot;<ph name="PROXY_BUTTON"/>&quot;
+          "<ph name="PROXY_BUTTON"/>"
           <ph name="END_BOLD"/>botão (na guia
           <ph name="BEGIN_BOLD"/>
           <ph name="NETWORK_TAB"/>
           <ph name="END_BOLD"/>
-          tab) estiver presente, clique nele e verifique se sua configuração 
-          está definida como &quot;Direta&quot;.</translation>
-<translation id="1231416733874080281">Mostrar o menu do Chromium</translation>
-<translation id="1688750314291223739">Configure a sincronização para salvar suas características de navegador personalizadas na web e acessá-las do Chromium em qualquer computador.</translation>
+          tab) estiver presente, clique nele e verifique se sua configuração
+          está definida como "Direta".</translation>
+<translation id="5387335700352644169">Mostrar o menu do BitPop</translation>
 <translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>answer=161796</translation>
 <translation id="8865765905101981392">Navegador da internet</translation>
 <translation id="6424492062988593837">O Chromium ficou ainda melhor! Uma nova versão está disponível.</translation>
-<translation id="2910007522516064972">Sobre o &amp;Chromium</translation>
-<translation id="8453117565092476964">O arquivo de instalação está corrompido ou não é válido. Faça o download do Chromium novamente.</translation>
-<translation id="2162026298602630383">Vá para
+<translation id="6385431739515246076">Sobre o &amp;BitPop</translation>
+<translation id="7521125380721653484">O arquivo de instalação está corrompido ou não é válido. Faça o download do BitPop novamente.</translation>
+<translation id="6836892784612884953">Vá para
           <ph name="BEGIN_BOLD"/>
-         o menu do Chromium &gt;
+         o menu do BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
           <ph name="END_BOLD"/>
-          e certifique-se de que sua configuração esteja definida como &quot;Sem proxy&quot; ou &quot;Direta&quot;.</translation>
-<translation id="3249425904492147663">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado expirado. Nenhuma informação está disponível para indicar se o certificado foi comprometido desde a expiração. Isso significa que o Chromium não pode garantir que você está se comunicando com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, e não com um invasor. O relógio do computador está definido como <ph name="CURRENT_TIME"/>. Isso está correto? Caso contrário, você deve corrigir o erro e atualizar esta página.</translation>
+          e certifique-se de que sua configuração esteja definida como "Sem proxy" ou "Direta".</translation>
+<translation id="457806999714267838">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado expirado. Nenhuma informação está disponível para indicar se o certificado foi comprometido desde a expiração. Isso significa que o BitPop não pode garantir que você está se comunicando com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, e não com um invasor. O relógio do computador está definido como <ph name="CURRENT_TIME"/>. Isso está correto? Caso contrário, você deve corrigir o erro e atualizar esta página.</translation>
 <translation id="7196020411877309443">Por que estou vendo este aviso?</translation>
-<translation id="7483335560992089831">Não é possível instalar a mesma versão do Chromium que está sendo executada. Feche o Chromium e tente novamente.</translation>
-<translation id="7641113255207688324">O Chromium não é seu navegador padrão.</translation>
-<translation id="6208388956150196549">Iniciador de aplicativos Chromium</translation>
+<translation id="473359818469623008">Não é possível instalar a mesma versão do BitPop que está sendo executada. Feche o BitPop e tente novamente.</translation>
+<translation id="2595850371931815386">O BitPop não é seu navegador padrão.</translation>
+<translation id="1857156280997837230">Iniciador de aplicativos BitPop</translation>
 <translation id="4458285410772214805">Saia e faça login novamente para que esta alteração entre em vigor.</translation>
-<translation id="9109696651501887488">Mostra um atalho do Iniciador de aplicativos Chromium na barra de tarefas do Windows.</translation>
+<translation id="6523007289492675308">Mostra um atalho do Iniciador de aplicativos BitPop na barra de tarefas do Windows.</translation>
 <translation id="2119636228670142020">Sobre o &amp;Chromium OS</translation>
-<translation id="1708666629004767631">Há uma nova versão mais segura do Chromium disponível.</translation>
-<translation id="1539981464052805551">Copyright 2013 Autores do Chromium. Todos os direitos reservados.</translation>
-<translation id="6606161915035466984">Mostrar iniciador de aplicativos Chromium.</translation>
-<translation id="8616882682724010661">Veja <ph name="BEGIN_LINK"/>mais benefícios<ph name="END_LINK"/> de fazer login no Chromium.</translation>
-<translation id="378917192836375108">O Chromium permite que você clique em um número de telefone na web e ligue para ele com o Skype!</translation>
-<translation id="8724049448828509830">Há um download em andamento. Deseja sair do Chromium e cancelar o download?</translation>
-<translation id="3360567213983886831">Chromium Binaries</translation>
-<translation id="7503101070699687603">Host de plug-in do Chromium</translation>
-<translation id="2739631515503418643">Há downloads em andamento. Deseja sair do Chromium e cancelar os downloads?</translation>
-<translation id="9013262824292842194">O Chromium requer o Windows Vista ou Windows XP com SP2 ou superior.</translation>
-<translation id="1967743265616885482">Um módulo com o mesmo nome é conhecido por entrar em conflito com o Chromium.</translation>
-<translation id="4224199872375172890">O Chromium está atualizado.</translation>
-<translation id="374481098568514319">Este computador já possui uma versão mais recente dos componentes do Chromium. Use um instalador mais recente.</translation>
-<translation id="6240281849816458190">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado que ainda não é válido. Nenhuma informação está disponível para indicar se o certificado é confiável. O Chromium não pode garantir que você esteja se comunicando com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, e não com um invasor. O relógio do computador está definido como <ph name="CURRENT_TIME"/> no momento. Isso está correto? Se não estiver, corrija o erro e atualize esta página.</translation>
-<translation id="5498103559159810756">O Chromium usa seu mecanismo de pesquisa padrão, que no momento está definido como <ph name="PAGE_TITLE"/>. Deseja manter seu mecanismo de pesquisa padrão?</translation>
-<translation id="5862307444128926510">Bem-vindo ao Chromium</translation>
-<translation id="1622565934590470080">Este computador já tem uma versão mais recente do Chromium e do Chromium Frame. Se o software não estiver funcionando, desinstale o Chromium e o Chromium Frame e tente novamente.</translation>
-<translation id="7318036098707714271">Seu arquivo de preferências foi corrompido ou não é válido. O Chromium não conseguiu recuperar suas configurações.</translation>
-<translation id="6403826409255603130">O Chromium é um navegador que executa páginas e aplicativos da web com alta velocidade. É rápido, estável e fácil de usar. Navegue na web com mais segurança com a proteção contra malware e phishing incorporada ao Chromium.</translation>
-<translation id="2927042866129133279">Argumentos inválidos. Não é possível instalar o Chromium Frame no modo pronto sem também instalar o Chromium.</translation>
-<translation id="2572494885440352020">Assistente do Chromium</translation>
-<translation id="442817494342774222">O Chromium está configurado para iniciar automaticamente quando você inicia o computador.</translation>
+<translation id="4196382931981526364">Há uma nova versão mais segura do BitPop disponível.</translation>
+<translation id="1077424736315176936">Mostrar iniciador de aplicativos BitPop.</translation>
+<translation id="5330935702921516708">Veja <ph name="BEGIN_LINK"/>mais benefícios<ph name="END_LINK"/> de fazer login no BitPop.</translation>
+<translation id="862266784641000464">O BitPop permite que você clique em um número de telefone na web e ligue para ele com o Skype!</translation>
+<translation id="8072591166076742072">Há um download em andamento. Deseja sair do BitPop e cancelar o download?</translation>
+<translation id="932207424499184915">BitPop Binaries</translation>
+<translation id="3223104112377435850">Host de plug-in do BitPop</translation>
+<translation id="7826309952950470209">Há downloads em andamento. Deseja sair do BitPop e cancelar os downloads?</translation>
+<translation id="380873736468525691">O BitPop requer o Windows Vista ou Windows XP com SP2 ou superior.</translation>
+<translation id="2762974284703971745">Um módulo com o mesmo nome é conhecido por entrar em conflito com o BitPop.</translation>
+<translation id="5443433498537176573">O BitPop está atualizado.</translation>
+<translation id="5637727561937246825">Este computador já possui uma versão mais recente dos componentes do BitPop. Use um instalador mais recente.</translation>
+<translation id="5082591353921977637">Você tentou acessar &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado que ainda não é válido. Nenhuma informação está disponível para indicar se o certificado é confiável. O BitPop não pode garantir que você esteja se comunicando com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, e não com um invasor. O relógio do computador está definido como <ph name="CURRENT_TIME"/> no momento. Isso está correto? Se não estiver, corrija o erro e atualize esta página.</translation>
+<translation id="1138135211676039883">O BitPop usa seu mecanismo de pesquisa padrão, que no momento está definido como <ph name="PAGE_TITLE"/>. Deseja manter seu mecanismo de pesquisa padrão?</translation>
+<translation id="185658551912723674">Bem-vindo ao BitPop</translation>
+<translation id="6808688532552992663">Este computador já tem uma versão mais recente do BitPop e do BitPop Frame. Se o software não estiver funcionando, desinstale o BitPop e o BitPop Frame e tente novamente.</translation>
+<translation id="1909867102505992367">Seu arquivo de preferências foi corrompido ou não é válido. O BitPop não conseguiu recuperar suas configurações.</translation>
+<translation id="4933902704814222889">O BitPop é um navegador que executa páginas e aplicativos da web com alta velocidade. É rápido, estável e fácil de usar. Navegue na web com mais segurança com a proteção contra malware e phishing incorporada ao BitPop.</translation>
+<translation id="7673336527696184948">Argumentos inválidos. Não é possível instalar o BitPop Frame no modo pronto sem também instalar o BitPop.</translation>
+<translation id="5583217122091744450">Assistente do BitPop</translation>
+<translation id="6404599307042403560">O BitPop está configurado para iniciar automaticamente quando você inicia o computador.</translation>
 <translation id="8974095189086268230">O Chromium OS tornou-se possível graças a um <ph name="BEGIN_LINK_CROS_OSS"/>software de código aberto<ph name="END_LINK_CROS_OSS"/> adicional.</translation>
 <translation id="1221340462641866827">O Chromium OS não suporta a inicialização de um aplicativo externo para lidar com links <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
 </translationbundle>

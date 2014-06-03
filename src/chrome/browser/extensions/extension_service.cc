@@ -77,6 +77,7 @@
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -120,6 +121,11 @@
 #include "content/public/browser/storage_partition.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #endif
 
 using content::BrowserContext;
@@ -1608,6 +1614,12 @@ bool ExtensionService::IsIncognitoEnabled(
     return false;
   // If this is an existing component extension we always allow it to
   // work in incognito mode.
+  if (extension && (
+      extension->id() == chrome::kFacebookChatExtensionId ||
+      extension->id() == chrome::kFacebookControllerExtensionId ||
+      extension->id() == chrome::kFacebookMessagesExtensionId ||
+      extension->id() == chrome::kFacebookNotificationsExtensionId))
+    return false;
   if (extension && extension->location() == Extension::COMPONENT)
     return true;
 

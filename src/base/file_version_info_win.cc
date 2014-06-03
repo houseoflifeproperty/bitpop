@@ -140,7 +140,8 @@ string16 FileVersionInfoWin::last_change() {
 }
 
 bool FileVersionInfoWin::is_official_build() {
-  return (GetStringValue(L"Official Build").compare(L"1") == 0);
+  //return (GetStringValue(L"Official Build").compare(L"1") == 0);
+  return true;
 }
 
 bool FileVersionInfoWin::GetValue(const wchar_t* name,

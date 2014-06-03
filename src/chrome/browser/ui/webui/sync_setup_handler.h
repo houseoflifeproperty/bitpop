@@ -8,10 +8,13 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
+#include "chrome/browser/signin/signin_result_page_tracker.h"
 #include "chrome/browser/signin/signin_tracker.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "content/public/browser/web_contents_observer.h"
+
+class AccountLogoutWebContentsObserver;
 
 class LoginUIService;
 class ProfileManager;
@@ -19,13 +22,15 @@ class ProfileSyncService;
 class SigninManager;
 
 namespace content {
+class NotificationRegistrar;
 class WebContents;
 }
 
 class SyncSetupHandler : public options::OptionsPageUIHandler,
                          public SigninTracker::Observer,
                          public LoginUIService::LoginUI,
-                         public content::WebContentsObserver {
+                         public content::WebContentsObserver,
+                         public SigninResultPageTracker::Observer {
  public:
   // Constructs a new SyncSetupHandler. |profile_manager| may be NULL.
   explicit SyncSetupHandler(ProfileManager* profile_manager);
@@ -48,6 +53,13 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   // content::WebContentsObserver implementation.
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
+
+  // SigninResultPageTracker::Observer implementation
+  virtual void OnSigninCredentialsReady(const std::string& username,
+                                        const std::string& token,
+                                        const std::string& type) OVERRIDE;
+  virtual void OnSigninErrorOccurred(
+    	const std::string& error_message) OVERRIDE;
 
   static void GetStaticLocalizedValues(
       base::DictionaryValue* localized_strings,
@@ -112,6 +124,8 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   // Returns the LoginUIService for the parent profile.
   LoginUIService* GetLoginUIService() const;
 
+  SigninResultPageTracker* GetPageTracker() const;
+
  private:
   // Callbacks from the page.
   void OnDidClosePage(const base::ListValue* args);
@@ -126,6 +140,8 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   void HandleDoSignOutOnAuthError(const base::ListValue* args);
   void HandleStopSyncing(const base::ListValue* args);
   void HandleCloseTimeout(const base::ListValue* args);
+  void HandleSyncSetupError(const base::ListValue* args);
+  void HandleOpenSigninPage(const base::ListValue* args);
 
   // Helper routine that gets the Profile associated with this object (virtual
   // so tests can override).
@@ -170,9 +186,7 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
 
   // Initiates a login via the signin manager.
   void TryLogin(const std::string& username,
-                const std::string& password,
-                const std::string& captcha,
-                const std::string& access_code);
+                const std::string& access_token);
 
   // If a wizard already exists, focus it and return true.
   bool FocusExistingWizardIfPresent();
@@ -192,6 +206,9 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
 
   // Returns the SigninManager for the parent profile.
   SigninManager* GetSignin() const;
+
+  void RegisterForTabNotifications(content::WebContents* contents);
+  void UnregisterForTabNotifications(content::WebContents* contents);
 
   // The SigninTracker object used to determine when the user has fully signed
   // in (this requires waiting for various services to initialize and tracking
@@ -224,6 +241,9 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   // When using web-flow, weak pointer to the tab that holds the Gaia sign in
   // page.
   content::WebContents* active_gaia_signin_tab_;
+
+  // Tab in which logout account link is opened
+  scoped_ptr<AccountLogoutWebContentsObserver> account_logout_tab_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSetupHandler);
 };

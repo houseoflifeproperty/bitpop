@@ -35,6 +35,8 @@
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api_factory.h"
 #include "chrome/browser/extensions/app_restore_service_factory.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -57,6 +59,7 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/browser/signin/signin_result_page_tracker_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
@@ -260,6 +263,8 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
   extensions::WebNavigationAPIFactory::GetInstance();
   ExtensionManagementAPIFactory::GetInstance();
 #endif
+  FacebookBitpopNotificationServiceFactory::GetInstance();
+  FacebookChatManagerServiceFactory::GetInstance();
   FaviconServiceFactory::GetInstance();
   FindBarStateFactory::GetInstance();
 #if defined(USE_AURA)
@@ -311,6 +316,8 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
 #if defined(ENABLE_WEB_INTENTS)
   WebIntentsRegistryFactory::GetInstance();
 #endif
+
+  SigninResultPageTrackerFactory::GetInstance();
 
   built_factories_ = true;
 }

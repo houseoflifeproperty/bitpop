@@ -1,53 +1,52 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="hr">
 <translation id="6676384891291319759">Pristup Internetu</translation>
-<translation id="6373523479360886564">Jeste li sigurni da želite deinstalirati Chromium?</translation>
-<translation id="6510925080656968729">Deinstaliranje Chromiuma</translation>
-<translation id="6893813176749746474">Chromium je ažuriran, ali vi ga niste upotrebljavali najmanje 30 dana.</translation>
-<translation id="1550579416447684632">Pokreni aplikacije sustava Chromium</translation>
-<translation id="4267347018362241535">Pokretač aplikacija sustava Chromium samostalna je platforma za aplikacije sustava Chromium.</translation>
+<translation id="8447784615389818621">Jeste li sigurni da želite deinstalirati BitPop?</translation>
+<translation id="100741878661450640">Deinstaliranje BitPopa</translation>
+<translation id="4301276314211054820">BitPop je ažuriran, ali vi ga niste upotrebljavali najmanje 30 dana.</translation>
+<translation id="8935261719622405725">Pokreni aplikacije sustava BitPop</translation>
+<translation id="2556535128417126306">Pokretač aplikacija sustava BitPop samostalna je platforma za aplikacije sustava BitPop.</translation>
 <translation id="2770231113462710648">Promijeni zadani preglednik na:</translation>
-<translation id="6613594504749178791">Promjene će početi vrijediti sljedeći put kad ponovo pokrenete Chromium.</translation>
-<translation id="3748537968684000502">Gledate sigurnu stranicu preglednika Chromium.</translation>
-<translation id="8971920611044657379">Chromium Frame</translation>
+<translation id="6870152852581894991">Promjene će početi vrijediti sljedeći put kad ponovo pokrenete BitPop.</translation>
+<translation id="3588014340702790340">Gledate sigurnu stranicu preglednika BitPop.</translation>
+<translation id="6789998774111513164">BitPop Frame</translation>
 <translation id="1065672644894730302">Vaše postavke nije moguće čitati. Neke značajke možda nisu dostupne i promjene postavki neće biti spremljene.</translation>
-<translation id="4222661289444749267">Ažuriranje aplikacije Chromium Frame.</translation>
-<translation id="2843244238218937196">Chromium Renderer</translation>
-<translation id="7128196614940529818">Chromium Frame već je instaliran i dostupan svim korisnicima ovog računala. Ako želite instalirati Chromium Frame na razini korisnika, prvo morate deinstalirati verziju na razini sustava koju je instalirao administrator.</translation>
+<translation id="4901429675189043920">Ažuriranje aplikacije BitPop Frame.</translation>
+<translation id="1132852132282742543">BitPop Renderer</translation>
+<translation id="7155774694068736041">BitPop Frame već je instaliran i dostupan svim korisnicima ovog računala. Ako želite instalirati BitPop Frame na razini korisnika, prvo morate deinstalirati verziju na razini sustava koju je instalirao administrator.</translation>
 <translation id="731644333568559921">Ažuriranje OS-a &amp;Chromium</translation>
-<translation id="7421823331379285070">Chromium zahtijeva Windows XP ili noviju verziju. Neke značajke možda neće raditi.</translation>
+<translation id="5284421695473942517">BitPop zahtijeva Windows XP ili noviju verziju. Neke značajke možda neće raditi.</translation>
 <translation id="3549345495227188780">Počnite s upotrebom OS-a Chromium</translation>
-<translation id="4330297532943865716">U sustavu je pronađena sukobljena instalacija preglednika Chromium ili aplikacije Chromium Frame. Deinstalirajte je i pokušajte ponovo.</translation>
-<translation id="6953661834318318668">Alatna traka preglednika Chromium</translation>
-<translation id="7097100943370017396">Chromium se više ne ažurira jer je vaš operativni sustav zastario.</translation>
-<translation id="2245147136185581459">Detektor tehnike Captive Portal u sustavu Chromium</translation>
-<translation id="4285930937574705105">Instalacija nije uspjela zbog nepoznate pogreške. Ako je Chromium trenutačno otvoren, zatvorite ga i pokušajte ponovo.</translation>
-<translation id="2589479092236095792">Postavke automatske ispune za Chromium</translation>
-<translation id="658492233547000995">Upotrijebite pokretač aplikacija sustava Chromium da biste pokrenuli svoje aplikacije.</translation>
+<translation id="8363397932717822970">U sustavu je pronađena sukobljena instalacija preglednika BitPop ili aplikacije BitPop Frame. Deinstalirajte je i pokušajte ponovo.</translation>
+<translation id="8235603028098851915">Alatna traka preglednika BitPop</translation>
+<translation id="5953515305183787825">BitPop se više ne ažurira jer je vaš operativni sustav zastario.</translation>
+<translation id="7230682351542979557">Detektor tehnike Captive Portal u sustavu BitPop</translation>
+<translation id="325440606879482824">Instalacija nije uspjela zbog nepoznate pogreške. Ako je BitPop trenutačno otvoren, zatvorite ga i pokušajte ponovo.</translation>
+<translation id="7224939653007212692">Postavke automatske ispune za BitPop</translation>
+<translation id="3078552028547324322">Upotrijebite pokretač aplikacija sustava BitPop da biste pokrenuli svoje aplikacije.</translation>
 <translation id="3555616473548901994">Deinstalacija dovršena.</translation>
-<translation id="3674409928058572366">Host aplikacije Chromium</translation>
-<translation id="2886012850691518054">Dodatno: pomognite nam da poboljšamo Chromium automatskim slanjem statistike o upotrebi i izvješća o padu programa Googleu.</translation>
-<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> – Chromium</translation>
-<translation id="1989424089625731201">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali certifikat koji je poslužitelj ponudio sadrži pogreške. Chromium ne može upotrebljavati certifikat s pogreškama i ne može ovjeriti identitet web-lokacije s kojom ste se pokušali povezati.</translation>
-<translation id="3103660991484857065">Program za instalaciju nije dekomprimirao arhivu. Ponovo preuzmite Chromium.</translation>
-<translation id="872034308864968620">Neka Chromium radi u pozadini</translation>
-<translation id="5109068449432240255">Da, napusti Chromium</translation>
-<translation id="4320129595801648679">Chromiumova stranica Nova kartica dobila je novi izgled. Izmjenjujte odjeljke klikom na ove oznake. Chromium će zapamtiti vaše postavke za sljedeći put.</translation>
+<translation id="5814137742095860156">Host aplikacije BitPop</translation>
+<translation id="9205983754412543288">Dodatno: pomognite nam da poboljšamo BitPop automatskim slanjem statistike o upotrebi i izvješća o padu programa Googleu.</translation>
+<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> – BitPop</translation>
+<translation id="6259082392093297310">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali certifikat koji je poslužitelj ponudio sadrži pogreške. BitPop ne može upotrebljavati certifikat s pogreškama i ne može ovjeriti identitet web-lokacije s kojom ste se pokušali povezati.</translation>
+<translation id="3801183610358973379">Program za instalaciju nije dekomprimirao arhivu. Ponovo preuzmite BitPop.</translation>
+<translation id="4450789702440326676">Neka BitPop radi u pozadini</translation>
+<translation id="2963590958538393837">Da, napusti BitPop</translation>
+<translation id="8031724302809093115">BitPopova stranica Nova kartica dobila je novi izgled. Izmjenjujte odjeljke klikom na ove oznake. Chromium će zapamtiti vaše postavke za sljedeći put.</translation>
 <translation id="1480489203462860648">Pokušajte, već je instaliran</translation>
-<translation id="3032787606318309379">Dodavanje u preglednik Chromium...</translation>
-<translation id="4831257561365056138">Deinstaliraj pokretač aplikacija sustava Chromium</translation>
-<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Upozorenje:<ph name="END_BOLD"/> Chromium ne može spriječiti proširenja da evidentiraju vašu povijest pregledavanja. Da biste onemogućili proširenje u anonimnom načinu, isključite tu opciju.</translation>
-<translation id="985602178874221306">Autori Chromiuma</translation>
-<translation id="8628626585870903697">Chromium ne uključuje pregledač PDF-a koji je potreban da bi pregled ispisa funkcionirao.</translation>
-<translation id="7138853919861947730">Chromium može upotrebljavati web-usluge za poboljšanje vašeg doživljaja pregledavanja.</translation>
-<translation id="466053073629175099">Sada ste prijavljeni u Chromium! Vaše oznake, povijest i druge postavke bit će sinkronizirane s vašim Google računom.</translation>
-<translation id="4179848566211676653">Zatvori Chromium</translation>
-<translation id="3849925841547750267">Na žalost, vaše postavke preglednika Mozilla Firefox nisu dostupne dok je taj preglednik aktivan. Da biste uvezli te postavke u Chromium, spremite svoj rad i zatvorite sve prozore Firefoxa. Zatim kliknite &quot;Nastavak&quot;.</translation>
-<translation id="7771626876550251690">U ovom slučaju, adresa navedena u certifikatu ne odgovara adresi web-lokacije kojoj je vaš preglednik pokušao pristupiti. Moguće je da vaše komunikacije presreće napadač koji nudi certifikat neke druge web-lokacije, što uzrokuje nepodudaranje. Drugi je mogući razlog taj da je poslužitelj postavljen da vraća isti certifikat za više web-lokacija, uključujući onu koju pokušavate posjetiti, iako taj certifikat nije valjan za sve te web-lokacije. Chromium može sa sigurnošću ustvrditi da ste stigli na web-lokaciju &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, ali ne može potvrditi da je to web-lokacija &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; koju ste namjeravali posjetiti. Ako nastavite, Chromium više neće provjeravati nepodudaranja imena.</translation>
-<translation id="2401271577450445716">Idite na
+<translation id="7098153548331126805">Dodavanje u preglednik BitPop...</translation>
+<translation id="5928487969163300899">Deinstaliraj pokretač aplikacija sustava BitPop</translation>
+<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Upozorenje:<ph name="END_BOLD"/> BitPop ne može spriječiti proširenja da evidentiraju vašu povijest pregledavanja. Da biste onemogućili proširenje u anonimnom načinu, isključite tu opciju.</translation>
+<translation id="3941397373453695568">BitPop ne uključuje pregledač PDF-a koji je potreban da bi pregled ispisa funkcionirao.</translation>
+<translation id="8155571637339134666">BitPop može upotrebljavati web-usluge za poboljšanje vašeg doživljaja pregledavanja.</translation>
+<translation id="5383732173730790693">Sada ste prijavljeni u BitPop! Vaše oznake, povijest i druge postavke bit će sinkronizirane s vašim Google računom.</translation>
+<translation id="6866316083935040427">Zatvori BitPop</translation>
+<translation id="4759775690587852534">Na žalost, vaše postavke preglednika Mozilla Firefox nisu dostupne dok je taj preglednik aktivan. Da biste uvezli te postavke u BitPop, spremite svoj rad i zatvorite sve prozore Firefoxa. Zatim kliknite "Nastavak".</translation>
+<translation id="2411757162791070146">U ovom slučaju, adresa navedena u certifikatu ne odgovara adresi web-lokacije kojoj je vaš preglednik pokušao pristupiti. Moguće je da vaše komunikacije presreće napadač koji nudi certifikat neke druge web-lokacije, što uzrokuje nepodudaranje. Drugi je mogući razlog taj da je poslužitelj postavljen da vraća isti certifikat za više web-lokacija, uključujući onu koju pokušavate posjetiti, iako taj certifikat nije valjan za sve te web-lokacije. BitPop može sa sigurnošću ustvrditi da ste stigli na web-lokaciju &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, ali ne može potvrditi da je to web-lokacija &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; koju ste namjeravali posjetiti. Ako nastavite, BitPop više neće provjeravati nepodudaranja imena.</translation>
+<translation id="2423180989259159758">Idite na
           <ph name="BEGIN_BOLD"/>
-          izbornik Chromium &gt;
+          izbornik BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -56,164 +55,162 @@
           &gt;
           postavke LAN-a
           <ph name="END_BOLD"/>
-          i poništite odabir potvrdnog okvira &quot;Upotrijebi proxy poslužitelj za LAN&quot;.</translation>
-<translation id="4330585738697551178">Za taj se modul već zna da je u konfliktu s Chromiumom.</translation>
-<translation id="3190315855212034486">Hopa! Chromium je pao. Pokrenuti ponovo sada?</translation>
-<translation id="6714487516757221107">Nije pronađena nijedna instalacija preglednika Chromium ili aplikacije Chromium Frame za ažuriranje.</translation>
+          i poništite odabir potvrdnog okvira "Upotrijebi proxy poslužitelj za LAN".</translation>
+<translation id="2886079192271351730">Za taj se modul već zna da je u konfliktu s BitPopom.</translation>
+<translation id="8324687802311409372">Hopa! BitPop je pao. Pokrenuti ponovo sada?</translation>
+<translation id="606385048658239900">Nije pronađena nijedna instalacija preglednika BitPop ili aplikacije BitPop Frame za ažuriranje.</translation>
 <translation id="3197823471738295152">Uređaj je ažuran.</translation>
 <translation id="8551886023433311834">Gotovo ažurno! Ponovo pokrenite uređaj da biste dovršili ažuriranje.</translation>
-<translation id="8353224596138547809">Želite li da Chromium spremi vašu zaporku za ovu web-lokaciju?</translation>
+<translation id="9090519209458031409">Želite li da BitPop spremi vašu zaporku za ovu web-lokaciju?</translation>
 <translation id="7339898014177206373">Novi prozor</translation>
 <translation id="3026202950002788510">Idite na
           <ph name="BEGIN_BOLD"/>
           Aplikacije &gt; Postavke sustava &gt; Mreža &gt; Napredno &gt; Proxy poslužitelji
           <ph name="END_BOLD"/>
           i isključite oznake uz odabrane proxy poslužitelje.</translation>
-<translation id="4124681358536363708">Čini se da se instalacijski direktorij preglednika Chromium upotrebljava. Ponovo pokrenite računalo i pokušajte još jednom.</translation>
-<translation id="8770560772173120024">Chromium trenutačno uvozi favorite/oznake.</translation>
+<translation id="85540521058185027">Čini se da se instalacijski direktorij preglednika BitPop upotrebljava. Ponovo pokrenite računalo i pokušajte još jednom.</translation>
+<translation id="5710380450759072582">BitPop trenutačno uvozi favorite/oznake.</translation>
 <translation id="225614027745146050">Dobro došli</translation>
-<translation id="9191268552238695869">Administrator je instalirao Chromium u ovom sustavu i on je dostupan svim korisnicima. Chromium na razini sustava sada će zamijeniti vašu instalaciju na razini korisnika.</translation>
-<translation id="3509308970982693815">Zatvorite sve prozore preglednika Chromium i pokušajte ponovo.</translation>
-<translation id="4077262827416206768">Zatvorite sve prozore preglednika Chromium i ponovo pokrenite Chromium da bi ta promjena postala aktivna.</translation>
-<translation id="6944967875980567883">Moduli učitani u Chromium</translation>
-<translation id="118298050220780080">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat koji je izdao entitet kojemu operativni sustav vašeg računala ne vjeruje. To može značiti da je poslužitelj generirao vlastite sigurnosne vjerodajnice, na koje se Chromium ne može osloniti za informacije o identitetu, ili da napadač pokušava presresti vaše komunikacije.</translation>
-<translation id="3296368748942286671">Nastavi izvršavati ​​pozadinske aplikacije po zatvaranju preglednika Chromium</translation>
+<translation id="3421246989510066651">Administrator je instalirao BitPop u ovom sustavu i on je dostupan svim korisnicima. BitPop na razini sustava sada će zamijeniti vašu instalaciju na razini korisnika.</translation>
+<translation id="1563133725769368154">Zatvorite sve prozore preglednika BitPop i pokušajte ponovo.</translation>
+<translation id="6948146312619379712">Zatvorite sve prozore preglednika BitPop i ponovo pokrenite BitPop da bi ta promjena postala aktivna.</translation>
+<translation id="5845248948746043578">Moduli učitani u BitPop</translation>
+<translation id="4718546117684412327">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat koji je izdao entitet kojemu operativni sustav vašeg računala ne vjeruje. To može značiti da je poslužitelj generirao vlastite sigurnosne vjerodajnice, na koje se BitPop ne može osloniti za informacije o identitetu, ili da napadač pokušava presresti vaše komunikacije.</translation>
+<translation id="2585492770508769131">Nastavi izvršavati ​​pozadinske aplikacije po zatvaranju preglednika BitPop</translation>
 <translation id="473775607612524610">Ažuriraj</translation>
-<translation id="6055895534982063517">Dostupna je nova verzija preglednika Chromium, brža no ikad.</translation>
-<translation id="2407806170074302369">O aplikaciji Chromium Frame...</translation>
-<translation id="5405650547142096840">Uklanjanje iz Chromiuma</translation>
+<translation id="1141543168124987471">Dostupna je nova verzija preglednika BitPop, brža no ikad.</translation>
+<translation id="6560811749587757293">O aplikaciji BitPop Frame...</translation>
+<translation id="5971960158340115871">Uklanjanje iz BitPopa</translation>
 <translation id="7747138024166251722">Program za instalaciju nije izradio privremeni direktorij. Provjerite ima li slobodnog prostora na disku i postoji li dopuštenje za instalaciju softvera.</translation>
-<translation id="3258596308407688501">Chromium ne može čitati iz svojeg podatkovnog direktorija niti u njega pisati:
+<translation id="6494656531179085521">BitPop ne može čitati iz svojeg podatkovnog direktorija niti u njega pisati:
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="4932687624772039103">Chromium ne podržava sustav <ph name="OS_NAME"/>.</translation>
+<translation id="7911731442009818211">BitPop ne podržava sustav <ph name="OS_NAME"/>.</translation>
 <translation id="8738921060445980047">Nepoznata verzija.</translation>
 <translation id="6970811910055250180">Ažuriranje uređaja...</translation>
 <translation id="2485422356828889247">Deinstaliraj</translation>
-<translation id="85843667276690461">Pomoć za upotrebu Chromiuma</translation>
-<translation id="263863604136125912">Pokreni Chromium</translation>
-<translation id="2881203820889150661">Chromium ne može stvoriti prečac aplikacije jer ne može odrediti trenutačno računalno okruženje.</translation>
-<translation id="4886158514168859177">Ovo računalo već ima noviju verziju aplikacije Chromium Frame. Ako softver ne funkcionira, deinstalirajte Chromium Frame i pokušajte ponovo.</translation>
+<translation id="8450502629618876351">Pomoć za upotrebu BitPopa</translation>
+<translation id="4742066939161073105">Pokreni BitPop</translation>
+<translation id="736882515641604854">BitPop ne može stvoriti prečac aplikacije jer ne može odrediti trenutačno računalno okruženje.</translation>
+<translation id="7209647769822542891">Ovo računalo već ima noviju verziju aplikacije BitPop Frame. Ako softver ne funkcionira, deinstalirajte BitPop Frame i pokušajte ponovo.</translation>
 <translation id="911206726377975832">Izbrisati i podatke o pregledavanju?</translation>
-<translation id="1699664235656412242">Zatvorite sve prozore u Chromiumu (uključujući i one u načinu sustava Windows 8) i pokušajte ponovo.</translation>
-<translation id="6734080038664603509">Ažuriranje &amp;Chromiuma</translation>
+<translation id="4501582071990606935">Zatvorite sve prozore u BitPopu (uključujući i one u načinu sustava Windows 8) i pokušajte ponovo.</translation>
+<translation id="2318017154298876822">Ažuriranje &amp;BitPopa</translation>
 <translation id="8862326446509486874">Nemate odgovarajuća prava za instaliranje na razini sustava. Pokušajte ponovno pokrenuti program za instalaciju kao administrator.</translation>
-<translation id="1774152462503052664">Neka Chromium radi u pozadini</translation>
-<translation id="9022552996538154597">Prijava na Chromium</translation>
+<translation id="8308846639737830860">Neka BitPop radi u pozadini</translation>
+<translation id="8251642411216619957">Prijava na BitPop</translation>
 <translation id="4365115785552740256">Chromium omogućuju projekt utemeljen na otvorenom kôdu <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> i drugi <ph name="BEGIN_LINK_OSS"/>softveri utemeljeni na otvorenom kôdu<ph name="END_LINK_OSS"/>.</translation>
-<translation id="6248213926982192922">Neka Chromium bude zadani preglednik</translation>
-<translation id="7337881442233988129">Chromium</translation>
-<translation id="3069161343438701711">Chromium Worker</translation>
+<translation id="6321973207566602686">Neka BitPop bude zadani preglednik</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="6572431599095627851">BitPop Worker</translation>
 <translation id="5820394555380036790">OS Chromium</translation>
 <translation id="6757767188268205357">Ne ometaj me</translation>
-<translation id="7294284502435423183">Pokušajte onemogućiti mrežno predviđanje prema ovim uputama:
+<translation id="6312770669638222416">Pokušajte onemogućiti mrežno predviđanje prema ovim uputama:
         Idite na
         <ph name="BEGIN_BOLD"/>
-        izbornik Chromium &gt;
+        izbornik BitPop &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
         <ph name="END_BOLD"/>
-        pa odaberite &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>.&quot;
+        pa odaberite "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         Ako se time ne riješi problem, preporučujemo da ponovo odaberete
         tu opciju radi bolje izvedbe.</translation>
-<translation id="275588974610408078">Prijavljivanje padova nije dostupno u pregledniku Chromium.</translation>
-<translation id="5909170354645388250">Ne upotrebljava se u Chromiumu. Rezervirano mjesto za održavanje sinkronizacije karata resursa. Očekuje se jedan argument: $1.</translation>
-<translation id="3582788516608077514">Ažuriranje Chromiuma...</translation>
-<translation id="7223968959479464213">Upravitelj zadataka – Chromium</translation>
-<translation id="3838208658251026018">Chromium iz značajke <ph name="BROWSER_COMPONENT"/> uvozi sljedeće stavke:</translation>
-<translation id="6638567566961868659">Pronađite oznake u izborniku Chromium ili na traci oznaka.</translation>
-<translation id="2673087257647337101">Još malo i ažuran! Ponovo pokrenite Chromium da biste završili ažuriranje.</translation>
-<translation id="5398878173008909840">Dostupna je nova verzija preglednika Chromium.</translation>
-<translation id="2648074677641340862">Došlo je do pogreške operativnog sustava tijekom instalacije. Ponovo preuzmite Chromium.</translation>
-<translation id="5942520288919337908">Proširenje <ph name="EXTENSION_NAME"/> dodano je u Chromium.</translation>
-<translation id="8678787945719392857">Upotrijebiti ovaj Google račun za sinkronizaciju svih vaših stvari na pregledniku Chromium?</translation>
-<translation id="8621669128220841554">Instalacija nije uspjela zbog nepoznate pogreške. Ponovo preuzmite Chromium.</translation>
-<translation id="6717134281241384636">Vaš se profil ne može upotrebljavati jer je iz novije verzije Chromiuma.
+<translation id="6220055452245182274">Prijavljivanje padova nije dostupno u pregledniku BitPop.</translation>
+<translation id="924450301557116466">Ne upotrebljava se u BitPopu. Rezervirano mjesto za održavanje sinkronizacije karata resursa. Očekuje se jedan argument: $1.</translation>
+<translation id="1984238998837921833">Ažuriranje BitPopa...</translation>
+<translation id="9102885271730191378">Upravitelj zadataka – BitPop</translation>
+<translation id="3916917357864849352">BitPop iz značajke <ph name="BROWSER_COMPONENT"/> uvozi sljedeće stavke:</translation>
+<translation id="5243897687251941678">Pronađite oznake u izborniku BitPop ili na traci oznaka.</translation>
+<translation id="5925519479755588070">Još malo i ažuran! Ponovo pokrenite BitPop da biste završili ažuriranje.</translation>
+<translation id="4352003675682958984">Dostupna je nova verzija preglednika BitPop.</translation>
+<translation id="8972540218839637401">Došlo je do pogreške operativnog sustava tijekom instalacije. Ponovo preuzmite BitPop.</translation>
+<translation id="8935838934328341225">Proširenje <ph name="EXTENSION_NAME"/> dodano je u BitPop.</translation>
+<translation id="8871841738132225233">Upotrijebiti ovaj Google račun za sinkronizaciju svih vaših stvari na pregledniku BitPop?</translation>
+<translation id="8988481325911971852">Instalacija nije uspjela zbog nepoznate pogreške. Ponovo preuzmite BitPop.</translation>
+<translation id="660036136456272595">Vaš se profil ne može upotrebljavati jer je iz novije verzije BitPopa.
 
-Neke su značajke možda nedostupne. Navedite neki drugi direktorij profila ili upotrijebite noviju verziju Chromiuma.</translation>
+Neke su značajke možda nedostupne. Navedite neki drugi direktorij profila ili upotrijebite noviju verziju BitPopa.</translation>
 <translation id="2712549016134575851">Otkriven je sukob s drugom instaliranom aplikacijom.</translation>
-<translation id="4881709374218686648">Prethodno ste bili prijavljeni s drugim računom; prijavom će se spojiti vaši podaci. Razmislite o otvaranju novog korisnika sustava Chromium na <ph name="BEGIN_LINK"/>stranici s postavkama<ph name="END_LINK"/> za svoje aktivnosti u sustavu Chromium.</translation>
-<translation id="9013087743919948559">Dodajte u Chromium</translation>
-<translation id="6212496753309875659">Ovo računalo već ima noviju verziju Chromiuma. Ako softver ne funkcionira, deinstalirajte Chromium i pokušajte ponovo.</translation>
-<translation id="3014684866565908571">Chromium Utility</translation>
+<translation id="1095023322915848441">Prethodno ste bili prijavljeni s drugim računom; prijavom će se spojiti vaši podaci. Razmislite o otvaranju novog korisnika sustava BitPop na <ph name="BEGIN_LINK"/>stranici s postavkama<ph name="END_LINK"/> za svoje aktivnosti u sustavu BitPop.</translation>
+<translation id="7862155441175671173">Dodajte u BitPop</translation>
+<translation id="5594704848342987755">Ovo računalo već ima noviju verziju BitPopa. Ako softver ne funkcionira, deinstalirajte BitPop i pokušajte ponovo.</translation>
+<translation id="3422131153907641068">BitPop Utility</translation>
 <translation id="1298199220304005244">Pomoć za upotrebu OS-a Chromium</translation>
-<translation id="1691304614444223855">Ažuriran je Chromium Frame. Ponovo pokrenite preglednik. Verzija preglednika Chromium: <ph name="TODO_0001"/>, verzija aplikacije Chromium Frame: <ph name="TODO_0002"/></translation>
+<translation id="8854394556488040390">Ažuriran je BitPop Frame. Ponovo pokrenite preglednik. Verzija preglednika BitPop: <ph name="TODO_0001"/>, verzija aplikacije Chromium Frame: <ph name="TODO_0002"/></translation>
 <translation id="130631256467250065">Promjene će početi vrijediti sljedeći put kad ponovo pokrenete uređaj.</translation>
-<translation id="1105130903706696483">Chromium se nije ispravno isključio. Da biste ponovo otvorili stranice koje su bile otvorene, kliknite &quot;Vraćanje&quot;.</translation>
-<translation id="1929939181775079593">Chromium ne reagira. Ponovo pokrenuti sada?</translation>
+<translation id="2901348058800597589">BitPop se nije ispravno isključio. Da biste ponovo otvorili stranice koje su bile otvorene, kliknite "Vraćanje".</translation>
+<translation id="5653921603290474550">BitPop ne reagira. Ponovo pokrenuti sada?</translation>
 <translation id="6089587093203430357">Instant</translation>
-<translation id="2966088006374919794">Chromium mora pokrenuti vanjsku aplikaciju za obradu veza <ph name="SCHEME"/>. Zatražena je veza <ph name="PROTOLINK"/>.</translation>
+<translation id="2410206016513008786">BitPop mora pokrenuti vanjsku aplikaciju za obradu veza <ph name="SCHEME"/>. Zatražena je veza <ph name="PROTOLINK"/>.</translation>
 <translation id="8046283042877435986">Ova web-lokacija preporučuje Chromium Frame (već instaliran).</translation>
-<translation id="6287463253129672858">Ne možete instalirati istu verziju aplikacije Chromium Frame koja se trenutačno izvršava. Zatvorite Chromium Frame i pokušajte ponovo.</translation>
-<translation id="2558235863893655150">Želite li da Chromium spremi zaporku?</translation>
-<translation id="3398522627033804247">Idite na
+<translation id="5523374683005655880">Ne možete instalirati istu verziju aplikacije BitPop Frame koja se trenutačno izvršava. Zatvorite BitPop Frame i pokušajte ponovo.</translation>
+<translation id="5574763173398621221">Želite li da BitPop spremi zaporku?</translation>
+<translation id="7730150800475367955">Idite na
           <ph name="BEGIN_BOLD"/>
-          izbornik Chromium &gt;
+          izbornik BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="INTERNET_TITLE"/>
           &gt;
-          &quot;<ph name="OPTIONS_BUTTON"/>&quot;
+          "<ph name="OPTIONS_BUTTON"/>"
           <ph name="END_BOLD"/>
           (za trenutačnu mrežu). Ako je prisutan gumb
           <ph name="BEGIN_BOLD"/>
-          &quot;<ph name="PROXY_BUTTON"/>&quot;
+          "<ph name="PROXY_BUTTON"/>"
           <ph name="END_BOLD"/> (na kartici 
           <ph name="BEGIN_BOLD"/>
           <ph name="NETWORK_TAB"/>
           <ph name="END_BOLD"/>
           ), kliknite ga i provjerite je li konfiguracija
-          postavljena na &quot;Izravno&quot;.</translation>
-<translation id="1231416733874080281">Prikaz izbornika Chromium</translation>
-<translation id="1688750314291223739">Postavite sinkronizaciju da biste spremili svoje prilagođene značajke preglednika na web i pristupali im s preglednika Chromium na bilo kojem računalu.</translation>
+          postavljena na "Izravno".</translation>
+<translation id="5387335700352644169">Prikaz izbornika BitPop</translation>
 <translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
 <translation id="8865765905101981392">Internetski preglednik</translation>
 <translation id="6424492062988593837">Chromium je postao još bolji! Dostupna je nova verzija.</translation>
-<translation id="2910007522516064972">O pregledniku &amp;Chromium</translation>
-<translation id="8453117565092476964">Arhiva programa za instalaciju oštećena je ili nevažeća. Ponovo preuzmite Chromium.</translation>
-<translation id="2162026298602630383">Idite na
+<translation id="6385431739515246076">O pregledniku &amp;BitPop</translation>
+<translation id="7521125380721653484">Arhiva programa za instalaciju oštećena je ili nevažeća. Ponovo preuzmite BitPop.</translation>
+<translation id="6836892784612884953">Idite na
           <ph name="BEGIN_BOLD"/>
-          izbornik Chromium &gt;
+          izbornik BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
           <ph name="END_BOLD"/>
-          i provjerite je li konfiguracija postavljena na &quot;bez proxyja&quot; ili &quot;izravno&quot;.</translation>
-<translation id="3249425904492147663">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat kojemu je istekao rok. Nisu dostupne informacije o tome je li taj certifikat ugrožen nakon isteka. To znači da Chromium ne može jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, ispravite pogrešku i osvježite stranicu.</translation>
+          i provjerite je li konfiguracija postavljena na "bez proxyja" ili "izravno".</translation>
+<translation id="457806999714267838">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat kojemu je istekao rok. Nisu dostupne informacije o tome je li taj certifikat ugrožen nakon isteka. To znači da BitPop ne može jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, ispravite pogrešku i osvježite stranicu.</translation>
 <translation id="7196020411877309443">Zašto vidim ovo?</translation>
-<translation id="7483335560992089831">Ne možete instalirati istu verziju Chromiuma koja se trenutačno izvršava. Zatvorite Chromium i pokušajte ponovo.</translation>
-<translation id="7641113255207688324">Chromium nije vaš zadani preglednik.</translation>
-<translation id="6208388956150196549">Pokretač aplikacija sustava Chromium</translation>
+<translation id="473359818469623008">Ne možete instalirati istu verziju BitPopa koja se trenutačno izvršava. Zatvorite BitPop i pokušajte ponovo.</translation>
+<translation id="2595850371931815386">BitPop nije vaš zadani preglednik.</translation>
+<translation id="1857156280997837230">Pokretač aplikacija sustava BitPop</translation>
 <translation id="4458285410772214805">Odjavite se i prijavite se ponovo da bi ta promjena postala aktivna.</translation>
-<translation id="9109696651501887488">Prikazuje prečac na pokretač aplikacija sustava Chromium na traci zadataka sustava Windows.</translation>
+<translation id="6523007289492675308">Prikazuje prečac na pokretač aplikacija sustava BitPop na traci zadataka sustava Windows.</translation>
 <translation id="2119636228670142020">O OS-u &amp;Chromium</translation>
-<translation id="1708666629004767631">Dostupna je nova, sigurnija verzija preglednika Chromium.</translation>
-<translation id="1539981464052805551">Autorska prava 2013. Autori Chromiuma. Sva prava pridržana.</translation>
-<translation id="6606161915035466984">Prikaži pokretač za aplikacije sustava Chromium.</translation>
-<translation id="8616882682724010661">Pogledajte <ph name="BEGIN_LINK"/>još prednosti<ph name="END_LINK"/> prijavljivanja na Chromium.</translation>
-<translation id="378917192836375108">Chromium omogućuje da kliknete telefonski broj na webu i nazovete ga koristeći se Skypeom!</translation>
-<translation id="8724049448828509830">Preuzimanje je u tijeku. Želite li napustiti Chromium i otkazati to preuzimanje?</translation>
-<translation id="3360567213983886831">Binarne datoteke Chromium</translation>
-<translation id="7503101070699687603">Chromium Plug-In Host</translation>
-<translation id="2739631515503418643">Preuzimanja su u tijeku. Želite li napustiti Chromium i otkazati ta preuzimanja?</translation>
-<translation id="9013262824292842194">Chromium zahtijeva sustav Windows Vista ili Windows XP sa servisnim paketom SP2 ili novijim.</translation>
-<translation id="1967743265616885482">Modul s tim nazivom već je bio u konfliktu s preglednikom Chromium.</translation>
-<translation id="4224199872375172890">Chromium je ažuran.</translation>
-<translation id="374481098568514319">Ovo računalo već ima noviju verziju komponenti Chromiuma. Upotrijebite noviji instalacijski program.</translation>
-<translation id="6240281849816458190">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali je poslužitelj ponudio certifikat koji još ne vrijedi. Nema dostupnih informacija o tome može li se taj certifikat smatrati pouzdanim. Chromium ne može pouzdano jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, podesite sat sustava i osvježite ovu stranicu.</translation>
-<translation id="5498103559159810756">Chromium upotrebljava vašu zadanu tražilicu koja je trenutačno postavljena na <ph name="PAGE_TITLE"/>. Želite li zadržati zadanu tražilicu?</translation>
-<translation id="5862307444128926510">Dobro došli u Chromium</translation>
-<translation id="1622565934590470080">Ovo računalo već ima noviju verziju preglednika Chromium i aplikacije Chromium Frame. Ako softver ne funkcionira, deinstalirajte Chromium i Chromium Frame i pokušajte ponovo.</translation>
-<translation id="7318036098707714271">Datoteka vaših postavki oštećena je ili nevažeća.
+<translation id="4196382931981526364">Dostupna je nova, sigurnija verzija preglednika BitPop.</translation>
+<translation id="1077424736315176936">Prikaži pokretač za aplikacije sustava BitPop.</translation>
+<translation id="5330935702921516708">Pogledajte <ph name="BEGIN_LINK"/>još prednosti<ph name="END_LINK"/> prijavljivanja na BitPop.</translation>
+<translation id="862266784641000464">BitPop omogućuje da kliknete telefonski broj na webu i nazovete ga koristeći se Skypeom!</translation>
+<translation id="8072591166076742072">Preuzimanje je u tijeku. Želite li napustiti BitPop i otkazati to preuzimanje?</translation>
+<translation id="932207424499184915">Binarne datoteke BitPop</translation>
+<translation id="3223104112377435850">BitPop Plug-In Host</translation>
+<translation id="7826309952950470209">Preuzimanja su u tijeku. Želite li napustiti BitPop i otkazati ta preuzimanja?</translation>
+<translation id="380873736468525691">BitPop zahtijeva sustav Windows Vista ili Windows XP sa servisnim paketom SP2 ili novijim.</translation>
+<translation id="2762974284703971745">Modul s tim nazivom već je bio u konfliktu s preglednikom BitPop.</translation>
+<translation id="5443433498537176573">BitPop je ažuran.</translation>
+<translation id="5637727561937246825">Ovo računalo već ima noviju verziju komponenti BitPopa. Upotrijebite noviji instalacijski program.</translation>
+<translation id="5082591353921977637">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali je poslužitelj ponudio certifikat koji još ne vrijedi. Nema dostupnih informacija o tome može li se taj certifikat smatrati pouzdanim. BitPop ne može pouzdano jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, podesite sat sustava i osvježite ovu stranicu.</translation>
+<translation id="1138135211676039883">BitPop upotrebljava vašu zadanu tražilicu koja je trenutačno postavljena na <ph name="PAGE_TITLE"/>. Želite li zadržati zadanu tražilicu?</translation>
+<translation id="185658551912723674">Dobro došli u BitPop</translation>
+<translation id="6808688532552992663">Ovo računalo već ima noviju verziju preglednika BitPop i aplikacije BitPop Frame. Ako softver ne funkcionira, deinstalirajte BitPop i BitPop Frame i pokušajte ponovo.</translation>
+<translation id="1909867102505992367">Datoteka vaših postavki oštećena je ili nevažeća.
 
-Chromium ne može oporaviti vaše postavke.</translation>
-<translation id="6403826409255603130">Chromium je web-preglednik koji munjevitom brzinom prikazuje web-stranice i aplikacije. Brz je, stabilan i jednostavan za upotrebu. Pregledavajte web sigurnije jer je zaštita od zlonamjernog softvera i krađe identiteta ugrađena u Chromium.</translation>
-<translation id="2927042866129133279">Nevažeći argumenti. Chromium Frame ne može se instalirati u načinu spremnom za rad, a da se također ne instalira Chromium.</translation>
-<translation id="2572494885440352020">Chromium Helper</translation>
-<translation id="442817494342774222">Chromium je konfiguriran za automatsko pokretanje kod pokretanja računala.</translation>
+BitPop ne može oporaviti vaše postavke.</translation>
+<translation id="4933902704814222889">BitPop je web-preglednik koji munjevitom brzinom prikazuje web-stranice i aplikacije. Brz je, stabilan i jednostavan za upotrebu. Pregledavajte web sigurnije jer je zaštita od zlonamjernog softvera i krađe identiteta ugrađena u BitPop.</translation>
+<translation id="7673336527696184948">Nevažeći argumenti. BitPop Frame ne može se instalirati u načinu spremnom za rad, a da se također ne instalira BitPop.</translation>
+<translation id="5583217122091744450">BitPop Helper</translation>
+<translation id="6404599307042403560">BitPop je konfiguriran za automatsko pokretanje kod pokretanja računala.</translation>
 <translation id="8974095189086268230">OS Chromium omogućuje dodatni <ph name="BEGIN_LINK_CROS_OSS"/>softver utemeljen na otvorenom kôdu<ph name="END_LINK_CROS_OSS"/>.</translation>
 <translation id="1221340462641866827">OS Chromium ne podržava pokretanje vanjske aplikacije za obradu veza <ph name="SCHEME"/>. Zatražena je veza <ph name="PROTOLINK"/>.</translation>
 </translationbundle>

@@ -1,0 +1,58 @@
+{
+  "extName": {
+    "message": "Uncensor Filter",
+    "description": "Extension name"
+  },
+  "extDesc": {
+    "message": "Uncensor Filter will redirect you to new locations of unlawfully censored sites.",
+    "description": "Extension description"
+  },
+  "redirectedMsg": {
+    "message": "You are being redirected to {0}",
+    "description": "Message in popup appearing after redirect. {0} is substituted with a URL like http://www.google.com/"
+  },
+  "updateSuccessMsg": {
+    "message": "The uncensor domain list was updated successfully.",
+    "description": "Message in popup appearing after successful domain list update"
+  },
+  "optionsTitle": {
+    "message": "Uncensor Filter extension options",
+    "description": "<title> of an option page"
+  },
+  "filterControl": {
+    "message": "Filter control",
+    "description": "'Allow redirection' option group header"
+  },
+  "alwaysRedirect": {
+    "message": "Always redirect / ON",
+    "description": "Enable redirect option title"
+  },
+  "neverRedirect": {
+    "message": "Never redirect / OFF",
+    "description": "Disable redirect option title"
+  },
+  "notices": {
+    "message": "Notices",
+    "description": "Notifications control option group header"
+  },
+  "showMessage": {
+    "message": "Show message when redirecting",
+    "description": "Enable redirect notification   text"
+  },
+  "notifyUpdates": {
+    "message": "Be notified when list updates",
+    "description": "Update domain list on success notification   text"
+  },
+  "originalDomain": {
+    "message": "Original domain",
+    "description": "Original domain table column header text"
+  },
+  "newLocation": {
+    "message": "New location",
+    "description": "New location domain table column header text"
+  },
+  "exceptions": {
+    "message": "Exceptions",
+    "description": "Exception site list table section header"
+  }
+}

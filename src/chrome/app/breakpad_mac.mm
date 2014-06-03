@@ -246,6 +246,13 @@ void InitCrashReporter() {
   SetCrashKeyValue(@"prod", [info_dictionary objectForKey:@BREAKPAD_PRODUCT]);
   SetCrashKeyValue(@"plat", @"OS X");
 
+  NSString *bundlePath = [main_bundle bundlePath];
+  NSDictionary* bundleFileAttribs = [[NSFileManager defaultManager] attributesOfItemAtPath:bundlePath error:nil];
+  NSDate *bundleCreationDate = [bundleFileAttribs objectForKey:NSFileCreationDate];
+  NSString *installTimestamp = [NSString stringWithFormat:@"%.0f", [bundleCreationDate timeIntervalSince1970]];
+  SetCrashKeyValue(@"InstallTime", installTimestamp);
+
+
   // Enable child process crashes to include the page URL.
   // TODO: Should this only be done for certain process types?
   base::mac::SetCrashKeyFunctions(SetCrashKeyValue,

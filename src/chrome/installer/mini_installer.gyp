@@ -231,7 +231,7 @@
               'inputs': [
                 '<(create_installer_archive_py_path)',
                 '<(PRODUCT_DIR)/app_host.exe',
-                '<(PRODUCT_DIR)/chrome.exe',
+                '<(PRODUCT_DIR)/bitpop.exe',
                 '<(PRODUCT_DIR)/chrome.dll',
                 '<(PRODUCT_DIR)/nacl64.exe',
                 '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',

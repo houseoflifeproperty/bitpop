@@ -25,6 +25,7 @@ UbertokenFetcher::~UbertokenFetcher() {
 }
 
 void UbertokenFetcher::StartFetchingToken() {
+  /*
   TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
   if (token_service->HasOAuthLoginToken()) {
     StartFetchingUbertoken();
@@ -37,6 +38,7 @@ void UbertokenFetcher::StartFetchingToken() {
                    content::Source<TokenService>(token_service));
     token_service->StartFetchingTokens();
   }
+  */
 }
 
 void UbertokenFetcher::StartFetchingUbertoken() {

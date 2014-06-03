@@ -66,6 +66,8 @@ class SyncPromoHandler : public SyncSetupHandler {
   // JavaScript callback handler for when a user clicks skip.
   void HandleUserSkipped(const base::ListValue* args);
 
+  void HandleStateSet(const base::ListValue* args);
+
   // Return the number of times the user with the current profile has seen the
   // sync promo.
   int GetViewCount() const;

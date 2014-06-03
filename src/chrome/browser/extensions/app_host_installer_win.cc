@@ -29,10 +29,10 @@ namespace {
 using extensions::OnAppHostInstallationCompleteCallback;
 
 // TODO(huangs) Refactor the constants: http://crbug.com/148538
-const wchar_t kGoogleRegClientsKey[] = L"Software\\Google\\Update\\Clients";
+const wchar_t kGoogleRegClientsKey[] = L"Software\\HouseOfLife\\BitPopUpdate\\Clients";
 
 // Copied from chrome_appid.cc.
-const wchar_t kBinariesAppGuid[] = L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}";
+const wchar_t kBinariesAppGuid[] = L"{B2A30819-3DA9-44A4-93AC-E02724D3BFA0}";
 
 // Copied from google_update_constants.cc
 const wchar_t kRegCommandLineField[] = L"CommandLine";

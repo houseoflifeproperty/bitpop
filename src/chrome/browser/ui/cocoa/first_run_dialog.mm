@@ -24,13 +24,13 @@
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
 #import "chrome/app/breakpad_mac.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
-#endif
+//#endif
 
 @interface FirstRunDialogController (PrivateMethods)
 // Show the dialog.
@@ -79,7 +79,7 @@ FirstRunShowBridge::~FirstRunShowBridge() {}
 
 // Show the first run UI.
 void ShowFirstRun(Profile* profile) {
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
   // The purpose of the dialog is to ask the user to enable stats and crash
   // reporting. This setting may be controlled through configuration management
   // in enterprise scenarios. If that is the case, skip the dialog entirely, as
@@ -114,9 +114,9 @@ void ShowFirstRun(Profile* profile) {
       DCHECK(success);
     }
   }
-#else  // GOOGLE_CHROME_BUILD
+//#else  // GOOGLE_CHROME_BUILD
   // We don't show the dialog in Chromium.
-#endif  // GOOGLE_CHROME_BUILD
+//#endif  // GOOGLE_CHROME_BUILD
 
   first_run::CreateSentinel();
 

@@ -157,6 +157,9 @@ class BrowserActionButton : public views::MenuButton,
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseCaptureLost() OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
@@ -187,6 +190,8 @@ class BrowserActionButton : public views::MenuButton,
 
  private:
   virtual ~BrowserActionButton();
+
+  void set_should_draw_as_pushed(bool flag);
 
   // Register an extension command if the extension has an active one.
   void MaybeRegisterExtensionCommand();
@@ -229,6 +234,9 @@ class BrowserActionButton : public views::MenuButton,
 
   // Responsible for running the menu.
   scoped_ptr<views::MenuRunner> menu_runner_;
+
+  bool should_draw_as_pushed_;
+  bool is_custom_extension_;
 
   friend class base::DeleteHelper<BrowserActionButton>;
 

@@ -10,12 +10,16 @@
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
@@ -121,10 +125,19 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
           icon_factory_(extension, browser_action_, this)),
       delegate_(delegate),
       context_menu_(NULL),
+      is_custom_extension_(false),
+      should_draw_as_pushed_(false),
       called_registered_extension_command_(false) {
   set_border(NULL);
   set_alignment(TextButton::ALIGN_CENTER);
   set_context_menu_controller(this);
+
+  if (extension->id() == chrome::kFacebookChatExtensionId) {
+    is_custom_extension_ = true;
+
+    PrefService *prefService = browser_->profile()->GetPrefs();
+    set_should_draw_as_pushed(prefService->GetBoolean(prefs::kFacebookShowFriendsList));
+  }
 
   // No UpdateState() here because View hierarchy not setup yet. Our parent
   // should call UpdateState() after creation.
@@ -136,6 +149,8 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED,
                  notification_source);
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED,
+                 notification_source);
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
                  notification_source);
 }
 
@@ -213,12 +228,14 @@ void BrowserActionButton::UpdateState() {
 
   SetShowMultipleIconStates(delegate_->NeedToShowMultipleIconStates());
 
-  if (!IsEnabled(tab_id)) {
-    SetState(views::CustomButton::STATE_DISABLED);
-  } else {
-    SetState(menu_visible_ ?
-             views::CustomButton::STATE_PRESSED :
-             views::CustomButton::STATE_NORMAL);
+  if (!is_custom_extension_) {
+    if (!IsEnabled(tab_id)) {
+      SetState(views::CustomButton::STATE_DISABLED);
+    } else {
+      SetState(menu_visible_ ?
+               views::CustomButton::STATE_PRESSED :
+               views::CustomButton::STATE_NORMAL);
+    }
   }
 
   gfx::ImageSkia icon = *icon_factory_.GetIcon(tab_id).ToImageSkia();
@@ -284,6 +301,13 @@ void BrowserActionButton::Observe(int type,
       }
       break;
     }
+    case content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED: {
+      if (is_custom_extension_) {
+        content::Details<bool> detailsBool(details);
+        set_should_draw_as_pushed(*detailsBool.ptr());
+      }
+      break;
+    }
     default:
       NOTREACHED();
       break;
@@ -331,13 +355,40 @@ void BrowserActionButton::OnMouseReleased(const ui::MouseEvent& event) {
   } else {
     TextButton::OnMouseReleased(event);
   }
+
+  if (should_draw_as_pushed_)
+    SetState(views::CustomButton::STATE_PRESSED);
 }
 
 void BrowserActionButton::OnMouseExited(const ui::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+
   if (IsPopup() || context_menu_)
     MenuButton::OnMouseExited(event);
   else
     TextButton::OnMouseExited(event);
+}
+
+void BrowserActionButton::OnMouseEntered(const ui::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseEntered(event);
+}
+
+void BrowserActionButton::OnMouseMoved(const ui::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseMoved(event);
+}
+
+void BrowserActionButton::OnMouseCaptureLost() {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseCaptureLost();
 }
 
 bool BrowserActionButton::OnKeyReleased(const ui::KeyEvent& event) {
@@ -410,4 +461,12 @@ void BrowserActionButton::MaybeUnregisterExtensionCommand(bool only_if_active) {
           NULL)) {
     GetFocusManager()->UnregisterAccelerator(*keybinding_.get(), this);
   }
+}
+
+void BrowserActionButton::set_should_draw_as_pushed(bool flag) {
+  should_draw_as_pushed_ = flag;
+  if (flag)
+    SetState(views::CustomButton::STATE_PRESSED);
+  else
+    SetState(views::CustomButton::STATE_NORMAL);
 }

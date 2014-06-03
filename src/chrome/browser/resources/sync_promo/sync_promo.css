@@ -1,7 +1,7 @@
 /* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
-
+/*
 html {
   font-family: segoe ui, arial, helvetica, sans-serif;
   font-size: 13px;
@@ -14,11 +14,33 @@ body {
   min-width: 100%;
   position: absolute;
 }
+*/
+
+.sync_setup_wrap {
+  font-family: segoe ui, arial, helvetica, sans-serif;
+  font-size: 13px;
+  margin: 0;
+  min-height: 100%;
+  min-width: 100%;
+  position: absolute;
+  text-align: left;
+  height: 100%;
+  background-color: rgba(0,0,0,0.6);
+}
+
+#sync-promo {
+  display: table-cell;
+  vertical-align: middle;
+}
 
 #sync-setup-overlay {
-  background-color: transparent;
+  /*background-color: transparent;
   margin: 0;
-  width: 100%;
+  */
+  width: 700px;
+  margin: 6px auto;
+  border-radius: 7px;
+  padding: 15px;
 }
 
 #sync-setup-configure {
@@ -44,9 +66,11 @@ body {
 }
 
 /* When showing the full page promo, remove top margin from sign-in box. */
+/*
 #sync-promo .sign-in {
   margin-top: 0;
 }
+*/
 
 /* Links and buttons. *********************************************************/
 
@@ -105,12 +129,12 @@ html[dir='rtl'] #promo-advanced {
 /* Page Title. ****************************************************************/
 
 #promo-title-container {
-  display: block;
+  display: none;
   margin: 37px 44px 35px;
   text-align: center;
 }
 
-h1 {
+.sync_setup_wrap h1 {
   color: rgb(34, 34, 34);
   font-size: 36px;
   font-weight: normal;

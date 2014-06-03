@@ -82,10 +82,12 @@ cr.define('options', function() {
       $('start-stop-sync').onclick = function(event) {
         if (self.syncSetupCompleted)
           SyncSetupOverlay.showStopSyncingUI();
+        /*
         else if (cr.isChromeOS)
           SyncSetupOverlay.showSetupUIWithoutLogin();
+        */
         else
-          SyncSetupOverlay.showSetupUI();
+          SyncSetupOverlay.openSigninPageFromStartSyncSettings();
       };
       $('customize-sync').onclick = function(event) {
         if (cr.isChromeOS)
@@ -421,6 +423,18 @@ cr.define('options', function() {
           OptionsPage.navigateToPage('factoryResetData');
         };
       }
+
+      if (cr.isMac) {
+        $('autoCheckCheckbox').onchange = function(event) {
+          chrome.send('toggleAutomaticUpdates');
+        };
+      }
+
+      $('useBitpopProxy').onclick = function(event) {
+        Preferences.setIntegerPref(
+          'bitpop.global_proxy_control',
+           this.checked ? 0 : 1, true);
+      };
     },
 
     /** @override */
@@ -686,7 +700,7 @@ cr.define('options', function() {
         if (cr.isChromeOS && syncData.hasError)
           SyncSetupOverlay.doSignOutOnAuthError();
         else
-          SyncSetupOverlay.showErrorUI();
+          SyncSetupOverlay.openSigninPageFromStartSyncSettings();
       };
 
       if (syncData.hasError)
@@ -1299,6 +1313,10 @@ cr.define('options', function() {
         if (index != undefined)
           $('bluetooth-paired-devices-list').deleteItemAtIndex(index);
       }
+    },
+
+    initUseBitpopProxy_: function(valueForSetting) {
+      $('useBitpopProxy').checked = (valueForSetting == 1) ? false : true;
     }
 
   };
@@ -1339,6 +1357,7 @@ cr.define('options', function() {
     'updateSearchEngines',
     'updateStartupPages',
     'updateSyncState',
+    'initUseBitpopProxy'
   ].forEach(function(name) {
     BrowserOptions[name] = function() {
       var instance = BrowserOptions.getInstance();

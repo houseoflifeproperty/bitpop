@@ -68,8 +68,8 @@ using installer::ProductState;
 using installer::Products;
 using installer::MasterPreferences;
 
-const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\ChromeCrashServices";
-const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\GoogleCrashServices\\";
+const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\BitPopCrashServices";
+const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\HouseOfLifeCrashServices\\";
 const wchar_t kSystemPrincipalSid[] = L"S-1-5-18";
 
 const MINIDUMP_TYPE kLargerDumpType = static_cast<MINIDUMP_TYPE>(

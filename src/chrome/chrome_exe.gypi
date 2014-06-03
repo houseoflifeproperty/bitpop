@@ -221,7 +221,7 @@
               # common.gypi, "Dump Symbols" needs to be in an (always true)
               # target_conditions block.
               'target_conditions': [
-                ['1 == 1', {
+                ['1 == 0', {
                   'postbuilds': [
                     {
                       'postbuild_name': 'Dump Symbols',
@@ -257,9 +257,11 @@
             # On Mac, make sure we've built chrome_dll, which contains all of
             # the library code with Chromium functionality.
             'chrome_dll',
+            'default_extensions',
           ],
           'mac_bundle_resources': [
             '<(PRODUCT_DIR)/<(mac_bundle_id).manifest',
+            'app/resources/dsa_pub.pem',
           ],
           'actions': [
             {
@@ -311,6 +313,21 @@
               'files': [
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
                 '<(PRODUCT_DIR)/libplugin_carbon_interpose.dylib',
+              ],
+            },
+            {
+              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
+              'files': [
+                '<(PRODUCT_DIR)/extensions/external_extensions.json',
+                '<(PRODUCT_DIR)/extensions/dropdown_most_visited.crx',
+                '<(PRODUCT_DIR)/extensions/facebook_friends.crx',
+                '<(PRODUCT_DIR)/extensions/facebook_messages.crx',
+                '<(PRODUCT_DIR)/extensions/facebook_notifications.crx',
+                '<(PRODUCT_DIR)/extensions/uncensor_domains.crx',
+                '<(PRODUCT_DIR)/extensions/uncensor_proxy.crx',
+                '<(PRODUCT_DIR)/extensions/share_button.crx',
+                '<(PRODUCT_DIR)/extensions/bittorrent_surf.crx',
+                '<(PRODUCT_DIR)/extensions/share_this.crx',
               ],
             },
           ],
@@ -394,8 +411,10 @@
           ],  # postbuilds
         }, {  # OS != "mac"
           'conditions': [
-            # TODO:  add a:
-            #   'product_name': 'chromium'
+            ['1 == 1', {
+              'product_name': 'bitpop',
+            }],
+
             # whenever we convert the rest of the infrastructure
             # (buildbots etc.) to understand the branding gyp define.
             # NOTE: chrome/app/theme/chromium/BRANDING and
@@ -471,6 +490,7 @@
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../sandbox/sandbox.gyp:sandbox',
             'app/policy/cloud_policy_codegen.gyp:policy',
+            'default_extensions',
           ],
           'sources': [
             'app/chrome_exe.rc',

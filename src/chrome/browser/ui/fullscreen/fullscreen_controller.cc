@@ -9,6 +9,7 @@
 #include "base/message_loop.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -39,7 +40,9 @@ FullscreenController::FullscreenController(Browser* browser)
       toggled_into_fullscreen_(false),
       mouse_lock_tab_(NULL),
       mouse_lock_state_(MOUSELOCK_NOT_REQUESTED),
-      reentrant_window_state_change_call_check_(false) {
+      reentrant_window_state_change_call_check_(false),
+      chatbar_temporarily_hidden_(false),
+      friends_sidebar_temporarily_hidden_(false) {
   DCHECK(window_);
   DCHECK(profile_);
 }
@@ -236,7 +239,7 @@ void FullscreenController::RequestToLockMouse(WebContents* web_contents,
 void FullscreenController::OnTabDeactivated(WebContents* web_contents) {
   if (web_contents == fullscreened_tab_ || web_contents == mouse_lock_tab_)
     ExitTabFullscreenOrMouseLockIfNecessary();
-}
+  }
 
 void FullscreenController::OnTabClosing(WebContents* web_contents) {
   if (web_contents == fullscreened_tab_ || web_contents == mouse_lock_tab_) {
@@ -262,10 +265,32 @@ void FullscreenController::WindowFullscreenStateChanged() {
   PostFullscreenChangeNotification(!exiting_fullscreen);
   if (exiting_fullscreen)
     NotifyTabOfExitIfNecessary();
-  if (exiting_fullscreen)
+  if (exiting_fullscreen) {
     window_->GetDownloadShelf()->Unhide();
-  else
+    
+    if (friends_sidebar_temporarily_hidden_ &&
+        !window_->IsFriendsSidebarVisible()) {
+      window_->SetFriendsSidebarVisible(true);
+      friends_sidebar_temporarily_hidden_ = false;
+    }
+
+    if (chatbar_temporarily_hidden_ && !window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Show();
+      chatbar_temporarily_hidden_ = false;
+    }
+  } else {
     window_->GetDownloadShelf()->Hide();
+
+    if (window_->IsFriendsSidebarVisible()) {
+        window_->SetFriendsSidebarVisible(false);
+        friends_sidebar_temporarily_hidden_ = true;
+    }
+
+    if (window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Hide();
+      chatbar_temporarily_hidden_ = true;
+    }
+  }
 }
 
 bool FullscreenController::HandleUserPressedEscape() {
@@ -606,4 +631,8 @@ FullscreenController::GetMouseLockSetting(const GURL& url) const {
   HostContentSettingsMap* settings_map = profile_->GetHostContentSettingsMap();
   return settings_map->GetContentSetting(url, url,
       CONTENT_SETTINGS_TYPE_MOUSELOCK, std::string());
+}
+
+void FullscreenController::SetOpenChatbarOnNextFullscreenEvent() {
+  chatbar_temporarily_hidden_ = true;
 }

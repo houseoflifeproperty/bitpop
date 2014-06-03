@@ -44,6 +44,8 @@
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 #import "chrome/browser/ui/cocoa/event_utils.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_sidebar_controller.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
@@ -881,6 +883,128 @@ enum {
   return YES;
 }
 
+- (void)adjustWindowWidthBy:(CGFloat)deltaW {
+  // By not adjusting the window height when initializing, we can ensure that
+  // the window opens with the same size that was saved on close.
+  if (initializing_ || [self isFullscreen] || deltaW == 0)
+    return;
+
+  NSWindow* window = [self window];
+  NSRect windowFrame = [window frame];
+  NSRect workarea = [[window screen] visibleFrame];
+
+  // // If the window is not already fully in the workarea, do not adjust its frame
+  // // at all.
+  // if (!NSContainsRect(workarea, windowFrame))
+  //   return;
+
+  // // Record the position of the top/bottom of the window, so we can easily check
+  // // whether we grew the window upwards/downwards.
+  // CGFloat oldWindowMaxX = NSMaxX(windowFrame);
+  // CGFloat oldWindowMinX = NSMinX(windowFrame);
+
+  // // We are "zoomed" if we occupy the full vertical space.
+  // bool isZoomed = (windowFrame.origin.x == workarea.origin.x &&
+  //                  windowFrame.size.width == workarea.size.width);
+
+  windowFrame.size.width += deltaW;
+  if (windowFrame.origin.x < workarea.origin.x) {
+    windowFrame.origin.x = workarea.origin.x;
+  }
+
+  windowFrame.size.width =
+        std::min(windowFrame.size.width, workarea.size.width);
+
+  if ((windowFrame.origin.x + windowFrame.size.width) >
+      (workarea.origin.x + workarea.size.width))
+    windowFrame.origin.x = workarea.origin.x + workarea.size.width -
+      windowFrame.size.width;
+
+  // // If we're shrinking the window....
+  // if (deltaW < 0) {
+  //   bool didChange = false;
+
+  //   // Don't reset if not currently zoomed since shrinking can take several
+  //   // steps!
+  //   if (isZoomed)
+  //     isShrinkingWFromZoomed_ = YES;
+
+
+
+  //   // If we previously grew at the top, shrink as much as allowed at the top
+  //   // first.
+  //   if (windowRightGrowth_ > 0) {
+  //     CGFloat shrinkAtTopBy = MIN(-deltaW, windowRightGrowth_);
+  //     windowFrame.size.width -= shrinkAtTopBy;  // Shrink the window.
+  //     deltaW += shrinkAtTopBy;            // Update the amount left to shrink.
+  //     windowLeftGrowth_ -= shrinkAtTopBy;  // Update the growth state.
+  //     didChange = true;
+  //   }
+
+  //   // Similarly for the bottom (not an "else if" since we may have to
+  //   // simultaneously shrink at both the top and at the bottom). Note that
+  //   // |deltaH| may no longer be nonzero due to the above.
+  //   if (deltaW < 0 && windowLeftGrowth_ > 0) {
+  //     CGFloat shrinkAtBottomBy = MIN(-deltaW, windowLeftGrowth_);
+  //     windowFrame.origin.x += shrinkAtBottomBy;     // Move the window up.
+  //     windowFrame.size.width -= shrinkAtBottomBy;  // Shrink the window.
+  //     deltaW += shrinkAtBottomBy;               // Update the amount left....
+  //     windowRightGrowth_ -= shrinkAtBottomBy;  // Update the growth state.
+  //     didChange = true;
+  //   }
+
+  //   // If we're shrinking from zoomed but we didn't change the top or bottom
+  //   // (since we've reached the limits imposed by |window...Growth_|), then stop
+  //   // here. Don't reset |isShrinkingFromZoomed_| since we might get called
+  //   // again for the same shrink.
+  //   if (isShrinkingWFromZoomed_ && !didChange)
+  //     return;
+  // } else {
+  //   isShrinkingWFromZoomed_ = NO;
+
+  //   // Don't bother with anything else.
+  //   if (isZoomed)
+  //     return;
+  // }
+
+  // // Shrinking from zoomed is handled above (and is constrained by
+  // // |window...Growth_|).
+  // if (!isShrinkingWFromZoomed_) {
+  //   // Resize the window down until it hits the bottom of the workarea, then if
+  //   // needed continue resizing upwards.  Do not resize the window to be taller
+  //   // than the current workarea.
+  //   // Resize the window as requested, keeping the top left corner fixed.
+  //   //windowFrame.origin.x += deltaW;
+  //   windowFrame.size.width += deltaW;
+
+  //   // If the bottom left corner is now outside the visible frame, move the
+  //   // window up to make it fit, but make sure not to move the top left corner
+  //   // out of the visible frame.
+  //   if ((windowFrame.origin.x + windowFrame.size.width) >
+  //       (workarea.origin.x + workarea.size.width)) {
+  //     //windowFrame.origin.x = workarea.origin.x;
+  //     windowFrame.size.width =
+  //         std::min(windowFrame.size.width, workarea.size.width);
+  //   }
+
+  //   // Record (if applicable) how much we grew the window in either direction.
+  //   // (N.B.: These only record growth, not shrinkage.)
+  //   if (NSMaxX(windowFrame) > oldWindowMaxX)
+  //     windowRightGrowth_ += NSMaxX(windowFrame) - oldWindowMaxX;
+  //   if (NSMinX(windowFrame) < oldWindowMinX)
+  //     windowLeftGrowth_ += oldWindowMinX - NSMinX(windowFrame);
+  // }
+
+  // Disable subview resizing while resizing the window, or else we will get
+  // unwanted renderer resizes.  The calling code must call layoutSubviews to
+  // make things right again.
+  NSView* contentView = [window contentView];
+  [contentView setAutoresizesSubviews:NO];
+  [window setFrame:windowFrame display:NO];
+  [contentView setAutoresizesSubviews:YES];
+
+}
+
 // Main method to resize browser window subviews.  This method should be called
 // when resizing any child of the content view, rather than resizing the views
 // directly.  If the view is already the correct height, does not force a
@@ -893,6 +1017,7 @@ enum {
   DCHECK(view == [toolbarController_ view] ||
          view == [infoBarContainerController_ view] ||
          view == [downloadShelfController_ view] ||
+         view == [facebookChatbarController_ view] ||
          view == [bookmarkBarController_ view]);
 
   // Change the height of the view and call |-layoutSubViews|. We set the height
@@ -916,11 +1041,13 @@ enum {
 
   BOOL resizeRectDirty = NO;
   if ((shouldAdjustBookmarkHeight && view == [bookmarkBarController_ view]) ||
-      view == [downloadShelfController_ view]) {
+      view == [downloadShelfController_ view] ||
+      view == [facebookChatbarController_ view]) {
     [[self window] disableScreenUpdatesUntilFlush];
     CGFloat deltaH = height - NSHeight(frame);
     if ([self adjustWindowHeightBy:deltaH] &&
-        view == [downloadShelfController_ view]) {
+        (view == [downloadShelfController_ view] ||
+         view == [facebookChatbarController_ view])) {
       // If the window height didn't change, the download shelf will change the
       // size of the contents. If the contents size doesn't change, send it
       // an explicit grow box invalidation (else, the resize message does that.)
@@ -1444,6 +1571,50 @@ enum {
   return downloadShelfController_;
 }
 
+- (BOOL)isChatbarVisible {
+  return facebookChatbarController_ != nil &&
+      [facebookChatbarController_ isVisible];
+}
+
+- (FacebookChatbarController*)facebookChatbar {
+  if (!facebookChatbarController_.get()) {
+    facebookChatbarController_.reset([[FacebookChatbarController alloc]
+        initWithBrowser:browser_.get() resizeDelegate:self]);
+    [[[self window] contentView] addSubview:[facebookChatbarController_ view]];
+  }
+  return facebookChatbarController_;
+}
+
+- (BOOL)isFriendsSidebarVisible {
+  return facebookSidebarController_.get() &&
+      [facebookSidebarController_ visible];
+}
+
+- (void)setFriendsSidebarVisible:(BOOL)visible {
+  if (browser_ == NULL || browser_->profile()->IsOffTheRecord())
+    return;
+
+  if (visible && ![self isFriendsSidebarVisible]) {
+    [[self friendsSidebar] setVisible:YES];
+  }
+  if (!visible && [self isFriendsSidebarVisible])
+    [[self friendsSidebar] setVisible:NO];
+
+  [self layoutSubviews];
+}
+
+- (FacebookSidebarController*)friendsSidebar {
+  if (!facebookSidebarController_.get()) {
+    facebookSidebarController_.reset([[FacebookSidebarController alloc]
+      initWithBrowser:browser_.get()]);
+    [[[self window] contentView]
+        addSubview:[facebookSidebarController_ view]
+        positioned:NSWindowBelow
+        relativeTo:[bookmarkBarController_ view]];
+  }
+  return facebookSidebarController_;
+}
+
 - (void)addFindBar:(FindBarCocoaController*)findBarCocoaController {
   // Shouldn't call addFindBar twice.
   DCHECK(!findBarCocoaController_.get());
@@ -1763,6 +1934,9 @@ enum {
       [bookmarkBarController_ shouldShowAtBottomWhenDetached]) {
     [self layoutBottomBookmarkBarInContentFrame:[[self tabContentArea] frame]];
   }
+
+  if (facebookChatbarController_.get())
+    [facebookChatbarController_ layoutItemsChildWindows];
 }
 
 // Handle the openLearnMoreAboutCrashLink: action from SadTabController when
@@ -1808,6 +1982,10 @@ enum {
   if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->WindowFrameChanged();
+  }
+
+  if (facebookChatbarController_.get()) {
+    [facebookChatbarController_ layoutItemsChildWindows];
   }
 }
 
@@ -1944,6 +2122,9 @@ willAnimateFromState:(BookmarkBar::State)oldState
     if ([[self window] isKindOfClass:[FramedBrowserWindow class]])
       [static_cast<FramedBrowserWindow*>([self window]) toggleSystemFullScreen];
   } else {
+    // Avoid bugs with chat windows
+    [[self facebookChatbar] closeAllChildrenPopups];
+
     if (fullscreen)
       [self enterFullscreenForSnowLeopard];
     else

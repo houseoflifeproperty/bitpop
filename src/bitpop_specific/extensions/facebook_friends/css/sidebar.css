@@ -1,0 +1,337 @@
+/*
+  BitPop browser. Facebook chat integration part.
+  Copyright (C) 2014 BitPop AS
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+.emberella-list-view {
+  overflow: auto !important;
+  position: relative !important;
+  width: 100%;
+  height: 100%;
+}
+.emberella-list-item-view {
+  position: absolute !important;
+  width: 100%;
+}
+
+
+.chat-dock-wrapper {
+  position: relative;
+  -webkit-perspective: 800px;
+  overflow:hidden;
+}
+
+.roster {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  -webkit-transform-style: preserve-3d;
+  -webkit-transform-origin: right center;
+  -webkit-transition: -webkit-transform 1s;
+}
+
+.roster > .card {
+  display: block;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  -webkit-backface-visibility: hidden;
+}
+
+.roster > .back {
+  -webkit-transform: translateX( 100% );
+}
+
+.roster.flipped {
+  -webkit-transform: translateX( -100% );
+}
+
+.roster.flipped > .front input[type="checkbox"]{
+  display: none;
+}
+
+#spinner-content {
+  position: relative;
+  padding-top: 60px;
+}
+
+#spinner {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  left: 47%;
+  top: 2px;
+  margin: 0 0 0 -15px;
+  border: 8px solid #fff;
+  border-right-color: transparent;
+  border-radius: 50%;
+  box-shadow: 0 0 25px 2px #eee;
+  -webkit-animation: spin 1s linear infinite;
+}
+
+@-webkit-keyframes spin
+{
+  from { -webkit-transform: rotate(0deg); opacity: 0.4; }
+  50%  { -webkit-transform: rotate(180deg); opacity: 1; }
+  to   { -webkit-transform: rotate(360deg); opacity: 0.4; }
+}
+
+/* Container div for front card */
+#login-content {
+  display: table;
+  width: 100%;
+  height: 100%;
+  margin-top: -100px;
+}
+
+/* Second-level div of the front card, centered vertically */
+#login-centered {
+  display: table-cell;
+  vertical-align: middle;
+  text-align: center;
+}
+
+/* Login button */
+.btn {
+  position: relative;
+  margin: 0;
+  cursor: pointer;
+  display: inline-block;
+  padding: 5px 14px 6px;
+  font-size: 13px;
+  line-height: normal;
+  border: 1px solid #CCC;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+  -webkit-box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+  -webkit-transition: 0.1s linear all;
+
+  color: white;
+  background-color: #0064CD;
+  background-repeat: repeat-x;
+  background-image: -webkit-linear-gradient(top, #049cdb, #0064cd);
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.25);
+  border-color: rgba(0, 0, 0, 0.1) rgba(0, 0, 0, 0.1) rgba(0, 0, 0, 0.25);
+}
+.btn:hover {
+  background-position: 0 -15px;
+  color: lightblue;
+  text-decoration: none;
+}
+.btn:focus {
+  outline: 1px dotted #666;
+}
+.btn:active {
+  -webkit-box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.05);
+  top: 1px;
+  left: 1px;
+}
+
+/* Chrome has an issue of bleeding some UI elements through the rotated face */
+/* Disable native UI from front card when showing back card */
+.roster.flipped > .front button,
+.roster.flipped > .front input,
+.roster.flipped > .front #spinner-content {
+  display: none;
+}
+
+.error {
+  color: #fff;
+  font-size: small;
+  text-align: left;
+  margin: 12px 12px;
+  padding: 7px 5px 5px 8px;
+  font-size: 12px;
+  background-color: rgba(255,0,0, .5);
+  border-radius: 7px;
+  background-image: url(../images/warning.png);
+  background-repeat: no-repeat;
+  background-position: 8px 5px;
+  text-indent: 18px;
+  line-height: 15px;
+  border: solid 2px white;
+  -webkit-box-shadow: 0 0 7px #888;
+  text-shadow: 0 1px rgba(0, 0, 0, 0.6);
+}
+
+p.promo {
+  font-size: 1.2em;
+  margin: 7px 0;
+}
+
+#sync-para {
+  margin-top: 1em;
+  margin-left: 5px;
+  color: gray;
+  text-align: left;
+}
+
+#sync-para label {
+    display: block;
+    padding-left: 15px;
+    text-indent: -15px;
+}
+#sync-para input[type="checkbox"] {
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    margin:0;
+    vertical-align: bottom;
+    position: relative;
+    top: -1px;
+    margin-right: 3px;
+    *overflow: hidden;
+}
+
+/* Sidebar header for roster - various fb helper UI */
+/* ------------------------------------------------ */
+
+#sidebar-head {
+  width: 177px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  padding: 3px;
+}
+
+#head-row1 {
+  display: -webkit-box;
+  -webkit-box-orient: horizontal;
+}
+
+#sidebar-head #head-col1 {
+  padding-right: 6px;
+}
+
+#sidebar-head #head-col1 img {
+  width: 45px;
+  height: 45px;
+  border: none;
+  padding: 0;
+}
+
+#sidebar-head #head-col2 {
+  -webkit-box-flex: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+
+#sidebar-head #head-col2-row1 {
+  font-size: 11px;
+  color: #444;
+  border: solid 1px #ccc;
+  border-radius: 3px;
+  padding: 0 2px;
+  cursor: pointer;
+  margin-bottom: 3px;
+  -webkit-box-flex: 1;
+  max-height: 26px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#sidebar-head #head-col2-row2 {
+  display: -webkit-box;
+  -webkit-box-orient: horizontal;
+}
+
+#sidebar-head #head-col2-row2 #status-select {
+  -webkit-box-flex: 1;
+  color: #888;
+  cursor: pointer;
+  padding-right: 3px;
+}
+
+#status-control {
+  width: 100%;
+  font-size: small;
+}
+
+#status-input-area {
+  outline: none;
+  border: 1px solid #ccc;
+  width: 98%;
+  resize: none;
+  font-size: 11px;
+  font-family: "lucida grande",tahoma,verdana,arial,sans-serif;
+}
+
+#search {
+  width: 100%;
+}
+
+#status-form {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical
+}
+
+/* #status-form */ #status-input-area {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+}
+
+#status-form .status-input-wrap {
+  -webkit-box-flex: 1;
+  position:relative;
+}
+
+#t1000 {
+  margin: 2px 0;
+  text-align: right;
+}
+
+#logout {
+  line-height: 0.8em;
+  margin: 0;
+  padding-top: 2px;
+}
+#logout a {
+  color: #360000;
+  cursor: pointer;
+}
+
+.blockUI.blockMsg.blockPage {
+  left: 5px;
+  right: 5px;
+  width: 163px;
+  border-radius: 2px;
+  -webkit-box-shadow: 0 0 7px rgba(160, 200, 255, 1);
+  padding: 5px 3px;
+}
+
+.blockUI.blockMsg.blockPage:before {
+  content: ' ';
+  background-image: url(../images/warning.png);
+  background-repeat: no-repeat;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 3px;
+}
+
+ul.smart-list li.online-fav-divider .wrap-item {
+  top: 6px;
+}

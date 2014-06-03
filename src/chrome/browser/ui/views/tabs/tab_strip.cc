@@ -470,14 +470,18 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   int overlay_id = 0;
   // The new tab button field trial will get created in variations_service.cc
   // through the variations server.
+  /*
   if (base::FieldTrialList::FindFullName(kNewTabButtonFieldTrialName) ==
           kNewTabButtonFieldTrialPlusGroupName) {
+  */
     overlay_id = state == views::CustomButton::STATE_PRESSED ?
         IDR_NEWTAB_BUTTON_P_PLUS : IDR_NEWTAB_BUTTON_PLUS;
+  /*
   } else {
-    overlay_id = state == views::CustomButton::STATE_PRESSED ?
+    overlay_id = state == views::CustomButton::BS_PUSHED ?
         IDR_NEWTAB_BUTTON_P : IDR_NEWTAB_BUTTON;
   }
+  */
   gfx::ImageSkia* overlay = GetThemeProvider()->GetImageSkiaNamed(overlay_id);
 
   gfx::Canvas canvas(

@@ -236,7 +236,7 @@ HMODULE LoadChromeWithDirectory(string16* dir) {
     //     should not be hard-coded with 'Google' in the path. Rather, it should
     //     use the product name.
     base::win::RegKey key(HKEY_CURRENT_USER,
-                          L"Software\\Google\\ChromeFrame",
+                          L"Software\\HouseOfLife\\ChromeFrame",
                           KEY_QUERY_VALUE);
 
     // Check if there are any pre-read settings in the registry. If so, then

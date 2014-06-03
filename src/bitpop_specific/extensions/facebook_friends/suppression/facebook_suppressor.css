@@ -1,0 +1,49 @@
+/* to enable Jewels/Chat and override the default suppression*/
+.rmJewel #jewelCase {
+    visibility: visible !important;
+    display: block !important;
+}
+
+.rmJewel #jewelContainer {
+    visibility: visible !important;
+    display: block !important;
+}
+
+.rmChat .fbNubGroup {
+    visibility: visible !important;
+    display: block !important;
+}
+
+.rmChat #fbNubGroup {
+    visibility: visible !important;
+    display: block !important;
+}
+
+.rmChat .fbChatSidebarBody {
+    visibility: visible !important;
+    display: block !important;
+}
+
+
+/* the following will suppress the Jewels/Chat on startup */
+.fbNubGroup {
+    visibility: hidden;
+    display: none;
+}
+
+.fbChatSidebarBody {
+    visibility: hidden;
+    display: none;
+}
+
+/*
+#jewelCase {
+    display: none;
+    visibility: hidden;
+}
+
+#jewelContainer {
+    display: none;
+    visibility: hidden;
+}
+*/

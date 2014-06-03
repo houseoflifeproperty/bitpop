@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="zh-TW">
 <translation id="6879617193011158416">切換書籤列</translation>
@@ -65,7 +65,7 @@
 <translation id="4940047036413029306">引號</translation>
 <translation id="1497897566809397301">允許網站儲存本機資料 (建議)</translation>
 <translation id="3275778913554317645">在視窗中開啟</translation>
-<translation id="4553117311324416101">Google 已發現惡意軟體，如果您繼續瀏覽，惡意軟體可能會安裝到您的電腦上。如果您之前瀏覽這個網站時沒有發現惡意軟體，或是曾將這個網站列入信任清單，則可能表示該網站最近遭到駭客入侵。請不要繼續瀏覽這個網站，建議您可以等到明天再試一次，或瀏覽其他網站。</translation>
+<translation id="8198393002783366468">BitPop 已發現惡意軟體，如果您繼續瀏覽，惡意軟體可能會安裝到您的電腦上。如果您之前瀏覽這個網站時沒有發現惡意軟體，或是曾將這個網站列入信任清單，則可能表示該網站最近遭到駭客入侵。請不要繼續瀏覽這個網站，建議您可以等到明天再試一次，或瀏覽其他網站。</translation>
 <translation id="8867568208303837180">傳送中… </translation>
 <translation id="509988127256758334">尋找項目(&amp;N)：</translation>
 <translation id="1420684932347524586">哎呀！產生隨機 RSA 私密金鑰失敗。</translation>
@@ -227,7 +227,7 @@
 <translation id="1818606096021558659">網頁</translation>
 <translation id="1549045574060481141">確認下載</translation>
 <translation id="5388588172257446328">使用者名稱：</translation>
-<translation id="1657406563541664238">只要自動傳送使用統計資料及當機報告給 Google，就能助我們一臂之力，讓「<ph name="PRODUCT_NAME"/>」更臻完美</translation>
+<translation id="5757566435961687655">只要自動傳送使用統計資料及當機報告給 House of Life，就能助我們一臂之力，讓「<ph name="PRODUCT_NAME"/>」更臻完美</translation>
 <translation id="7982789257301363584">網路</translation>
 <translation id="2271281383664374369">已暫時禁止擴充功能向網址傳送要求。</translation>
 <translation id="8528962588711550376">登入中。</translation>
@@ -243,7 +243,7 @@
 <translation id="1776883657531386793"><ph name="OID"/>：<ph name="INFO"/></translation>
 <translation id="1510030919967934016">此網頁已遭封鎖，無法追蹤您的位置。</translation>
 <translation id="8848519885565996859">使用者定義的網址連結頁框</translation>
-<translation id="4640525840053037973">使用 Google 帳戶登入</translation>
+<translation id="4550196943338771146">使用 BitPop 帳戶登入</translation>
 <translation id="5255315797444241226">您輸入的通關密語不正確。</translation>
 <translation id="762917759028004464">預設瀏覽器目前是 <ph name="BROWSER_NAME"/>。</translation>
 <translation id="9213479837033539041">剩下 <ph name="NUMBER_MANY"/> 秒</translation>
@@ -286,8 +286,8 @@
 <translation id="1801827354178857021">句號</translation>
 <translation id="4560332071395409256">請依序按一下 [開始]<ph name="BEGIN_BOLD"/><ph name="END_BOLD"/> 和 [執行]<ph name="BEGIN_BOLD"/><ph name="END_BOLD"/>，再輸入 <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/>，然後按一下 [確定]<ph name="BEGIN_BOLD"/><ph name="END_BOLD"/>。</translation>
 <translation id="2179052183774520942">新增搜尋引擎</translation>
-<translation id="4043223219875055035">請登入您的 Google 帳戶，允許應用程式同步處理設定及提供其他自訂服務。</translation>
-<translation id="6868050610674841964">登入即會將資料同步處理至 Google 帳戶，讓您可以透過任何裝置存取自己的書籤、紀錄和其他設定。</translation>
+<translation id="7333287746989217896">請登入您的 BitPop 帳戶，允許應用程式同步處理設定及提供其他自訂服務。</translation>
+<translation id="5804885986789001150">登入即會將資料同步處理至 Facebook/BitPop 帳戶，讓您可以透過任何裝置存取自己的書籤、紀錄和其他設定。</translation>
 <translation id="5498951625591520696">無法使用伺服器。</translation>
 <translation id="1621207256975573490">另存框架為(&amp;F)...</translation>
 <translation id="4681260323810445443">您無權瀏覽位於 <ph name="URL"/> 的網頁，您可能需要登入才能瀏覽這個網頁。</translation>
@@ -409,7 +409,7 @@
 <translation id="8194465509832052438">設定指令</translation>
 <translation id="4422347585044846479">編輯此網頁的書籤</translation>
 <translation id="2452539774207938933">切換至以下使用者：<ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome 將您在瀏覽器中輸入的字詞傳送給 Google 伺服器，藉此提供更聰明的拼字檢查功能，可讓您使用 Google 搜尋也在使用的拼字檢查技術。</translation>
+<translation id="8810891758424955762">BitPop 將您在瀏覽器中輸入的字詞傳送給 Google 伺服器，藉此提供更聰明的拼字檢查功能，可讓您使用 Google 搜尋也在使用的拼字檢查技術。</translation>
 <translation id="1880905663253319515">要刪除憑證「<ph name="CERTIFICATE_NAME"/>」嗎？</translation>
 <translation id="8546306075665861288">圖片快取</translation>
 <translation id="1168100932582989117">Google 名稱伺服器</translation>
@@ -498,7 +498,6 @@
 <translation id="1046059554679513793">糟糕，已經有人使用這個名稱！</translation>
 <translation id="3887847548716051874">一律允許這個網站使用這組麥克風和攝影機</translation>
 <translation id="4497097279402334319">無法連線至網路。</translation>
-<translation id="7342729285348293164">以「Google 帳戶」登入 <ph name="PRODUCT_NAME"/>，即可在網路上儲存個人化的瀏覽器功能，而且使用別台電腦也能套用您的 <ph name="PRODUCT_NAME"/> 設定。一登入帳戶，就能自動登入您喜愛的各種 Google 服務。</translation>
 <translation id="2542049655219295786">Google 表格</translation>
 <translation id="3899879303189199559">離線超過一年</translation>
 <translation id="5303618139271450299">找不到這個網頁</translation>
@@ -640,7 +639,6 @@
 <translation id="773426152488311044">目前您是 <ph name="PRODUCT_NAME"/> 唯一的使用者。</translation>
 <translation id="2042078858148122628">DNS 查詢失敗，因此找不到位於 <ph name="HOST_NAME"/> 的伺服器。DNS 是將網站名稱轉譯成網際網路位址的網路服務。這項錯誤最常見的原因是沒有連線至網際網路或網路設定錯誤；也可能是因為 DNS 伺服器沒有回應，或是防火牆禁止 <ph name="PRODUCT_NAME"/> 存取網路。</translation>
 <translation id="2159087636560291862">在此情況下，憑證並未經過您的電腦所信任的第三方單位驗證。任何人都能建立憑證，並任意宣稱自己是某某網站，這就是為什麼憑證需經過受信任的第三方驗證的原因。如果未經驗證，則憑證內的身分資訊不具任何意義，這意味著沒有人可以確認您是真的在與 <ph name="DOMAIN"/> 通訊，還是與自行建立憑證並宣稱是 <ph name="DOMAIN2"/> 的攻擊者通訊，建議您停止後續操作。</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> 要求您使用自己的 Google 密碼或通關密語對資料進行加密。</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">這不是憑證授權單位</translation>
 <translation id="6099520380851856040">當機時間：<ph name="CRASH_TIME"/></translation>
@@ -660,7 +658,7 @@
 <translation id="9121814364785106365">在固定分頁中開啟</translation>
 <translation id="6292030868006209076">泰米爾文輸入法 (itrans)</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_DOMAIN"/> 上的 <ph name="PEPPER_PLUGIN_NAME"/> 外掛程式要求存取您的電腦。</translation>
-<translation id="2128450505147514836">附加檔案已上傳至 Google 伺服器以供偵錯。&lt;br&gt;
+<translation id="7411702401114360503">附加檔案已上傳至 BitPop 伺服器以供偵錯。&lt;br&gt;
         注意：您可以在每份意見回饋報告中附加一個檔案 (上限為 3 MB)。</translation>
 <translation id="3435896845095436175">啟用</translation>
 <translation id="5849294688757445020">對所有網頁使用 GPU 合成功能</translation>
@@ -844,7 +842,7 @@
 <translation id="5120247199412907247">進階設定</translation>
 <translation id="567881659373499783">版本 <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">安全瀏覽隱私權政策</translation>
-<translation id="5105859138906591953">如要將「工具列」書籤匯入 Chrome，您必須登入自己的「Google 帳戶」。請先登入再重新嘗試匯入。</translation>
+<translation id="5189894578581316474">如要將「工具列」書籤匯入 BitPop，您必須登入自己的「Google 帳戶」。請先登入再重新嘗試匯入。</translation>
 <translation id="8899851313684471736">在新視窗中開啟連結(&amp;W)</translation>
 <translation id="4110342520124362335">系統已封鎖 <ph name="DOMAIN"/> 的 Cookie。</translation>
 <translation id="2198315389084035571">簡體中文</translation>
@@ -912,7 +910,6 @@
 <translation id="2441392884867482684">這個頁面已顯示為全螢幕，並要求停用滑鼠游標。</translation>
 <translation id="1049376040497900836"><ph name="SHORT_PRODUCT_NAME"/> 版本變更時顯示</translation>
 <translation id="1422780722984745882">系統收到多個不同的 Location 標頭。我們不允許這種情形，這是為了避免遭到 HTTP 回應分割攻擊。</translation>
-<translation id="7787129790495067395">您目前使用的是通關密語。如您忘記通關密語，可以透過「Google 資訊主頁」重設同步處理，以清除您儲存在 Google 伺服器上的資料。</translation>
 <translation id="721997939566478439">好的，我知道了</translation>
 <translation id="6612611129072884913">將網頁固定到開始畫面...</translation>
 <translation id="3380365263193509176">未知的錯誤</translation>
@@ -1037,7 +1034,7 @@
 <translation id="2955913368246107853">關閉搜尋列</translation>
 <translation id="8864170386249720785">這部行動裝置通用的 SSL 設定：</translation>
 <translation id="2560788951337264832">剩下 <ph name="NUMBER_ZERO"/> 分鐘</translation>
-<translation id="3914942725612686145">您已登入 Chrome。您開啟的分頁、書籤和網址列資料都會與 Google 帳戶同步處理。</translation>
+<translation id="6896530527102607056">您已登入 Chrome。您開啟的分頁、書籤和網址列資料都會與 Facebook/BitPop 帳戶同步處理。</translation>
 <translation id="5642508497713047">CRL 簽署者</translation>
 <translation id="813082847718468539">查看網站資訊</translation>
 <translation id="127353061808977798">字型和編碼</translation>
@@ -1392,7 +1389,7 @@
 <translation id="7092106376816104">彈出式視窗例外</translation>
 <translation id="4830475881783902092">用戶端 ID：</translation>
 <translation id="4600958291864306415">正在產生副本...</translation>
-<translation id="8594787581355215556">您是以 <ph name="USER_EMAIL_ADDRESS"/> 的身分登入。您可前往 <ph name="BEGIN_LINK"/>Google 資訊主頁<ph name="END_LINK"/>管理同步處理資料。</translation>
+<translation id="2669230071943955873">您是以 <ph name="USER_EMAIL_ADDRESS"/> 的身分登入。您可前往 <ph name="BEGIN_LINK"/>BitPop 資訊主頁<ph name="END_LINK"/>管理同步處理資料。</translation>
 <translation id="4338600611020922010">新增至主螢幕</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> 無法完成安裝，但會繼續透過磁碟映像執行。</translation>
 <translation id="1952837113524940233">啟用新型網路處理常式</translation>
@@ -1412,7 +1409,7 @@
 <translation id="4250680216510889253">否</translation>
 <translation id="5109044022078737958">咪咪</translation>
 <translation id="6291953229176937411">在 Finder 中顯示(&amp;S)</translation>
-<translation id="8598687241883907630">中斷您「Google 帳戶」的連線...</translation>
+<translation id="3684341060830149235">中斷您「Facebook/BitPop 帳戶」的連線...</translation>
 <translation id="2556718757702023317">如要離線儲存「<ph name="FILE_NAME"/>」，您必須釋放 <ph name="TOTAL_FILE_SIZE"/> 的空間：<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>取消固定不會再離線存取的檔案<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>從下載資料夾中刪除檔案<ph name="MARKUP_5"/></translation>
@@ -1496,7 +1493,7 @@
 <translation id="4181898366589410653">在伺服器的憑證中找不到撤銷機制。</translation>
 <translation id="1515163294334130951">啟動</translation>
 <translation id="6914291514448387591">需要您的授權才能執行 <ph name="PLUGIN_NAME"/>。</translation>
-<translation id="1123316951456119629">中斷 Google 帳戶與 <ph name="PRODUCT_NAME"/> 的連線後，在這台電腦上變更的資料就不會繼續同步處理到您的 Google 帳戶中。除非您透過 <ph name="BEGIN_LINK"/>Google 資訊主頁<ph name="END_LINK"/>移除這些資料，否則已儲存在 Google 帳戶中的資料將保持不變。</translation>
+<translation id="3144050057163527741">中斷 BitPop 帳戶與 <ph name="PRODUCT_NAME"/> 的連線後，在這台電腦上變更的資料就不會繼續同步處理到您的 Google 帳戶中。除非您透過 <ph name="BEGIN_LINK"/>Google 資訊主頁<ph name="END_LINK"/>移除這些資料，否則已儲存在 Google 帳戶中的資料將保持不變。</translation>
 <translation id="8705331520020532516">序號</translation>
 <translation id="1665770420914915777">使用新分頁</translation>
 <translation id="5456409301717116725">這個擴充功能含有金鑰檔「<ph name="KEY_PATH"/>」。您不妨重新考慮是否仍要進行。</translation>
@@ -1712,8 +1709,8 @@
 <translation id="7434823369735508263">英式 Dvorak 鍵盤</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> 天</translation>
 <translation id="8825366169884721447">這個擴充功能無法修改網路要求的「<ph name="HEADER_NAME"/>」要求標頭，因為修改動作與其他擴充功能 (<ph name="EXTENSION_NAME"/>) 發生衝突。</translation>
-<translation id="5308845175611284862">使用 <ph name="PRODUCT_NAME"/> 同步功能，可讓您輕鬆在不同電腦間共用資料 (例如書籤與設定)。
-          <ph name="PRODUCT_NAME"/> 會在您登入 Google 帳戶後，將您的資料儲存在 Google 的線上伺服器中，藉此同步處理您的資料。</translation>
+<translation id="291445075019511713">使用 <ph name="PRODUCT_NAME"/> 同步功能，可讓您輕鬆在不同電腦間共用資料 (例如書籤與設定)。
+          <ph name="PRODUCT_NAME"/> 會在您登入 BitPop 帳戶後，將您的資料儲存在 BitPop 的線上伺服器中，藉此同步處理您的資料。</translation>
 <translation id="1707463636381878959">與其他使用者共用這個網路</translation>
 <translation id="3024663005179499861">政策類型有誤</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -1904,7 +1901,7 @@
 <translation id="1601560923496285236">套用</translation>
 <translation id="2390045462562521613">不記錄這個網路</translation>
 <translation id="3348038390189153836">偵測到卸除式裝置</translation>
-<translation id="8005540215158006229">Chrome 即將準備就緒。</translation>
+<translation id="3674182693516842999">BitPop 即將準備就緒。</translation>
 <translation id="1666788816626221136">下列檔案上的憑證不屬於任何其他類別：</translation>
 <translation id="5698727907125761952">官方藝術家</translation>
 <translation id="4821935166599369261">分析已啟用(&amp;P)</translation>
@@ -2057,7 +2054,7 @@
 <translation id="748138892655239008">憑證基本限制</translation>
 <translation id="457386861538956877">更多…</translation>
 <translation id="9210991923655648139">可存取指令碼的 Cookie：</translation>
-<translation id="4152177296285305182">只有知道您通關密語的使用者，才能讀取加密保護的檔案 -- 系統不會將通關密語傳送給 Google，Google 也不會儲存通關密語。如果您忘記自己的通關密語，則必須重設同步處理。</translation>
+<translation id="8792136381897173209">只有知道您通關密語的使用者，才能讀取加密保護的檔案 -- 系統不會將通關密語傳送給 BitPop，Google 也不會儲存通關密語。如果您忘記自己的通關密語，則必須重設同步處理。</translation>
 <translation id="1950295184970569138">* Google 個人資料相片 (載入中)</translation>
 <translation id="8063491445163840780">啟用分頁 4</translation>
 <translation id="5473544328731861874">移除關聯結構</translation>
@@ -2216,7 +2213,6 @@
 <translation id="2563185590376525700">青蛙</translation>
 <translation id="2553340429761841190">「<ph name="PRODUCT_NAME"/>」無法連線至<ph name="NETWORK_ID"/>，請選取其他網路，或再試一次。</translation>
 <translation id="2086712242472027775">此帳戶不能在<ph name="PRODUCT_NAME"/>上使用，請聯絡網域管理員，或使用一般的「Google 帳戶」登入。</translation>
-<translation id="1373074393717692190">使用 Google 帳戶登入 <ph name="PRODUCT_NAME"/>，即可在網路上儲存個人化的瀏覽器功能，而且還可以使用別部行動裝置套用您的 <ph name="PRODUCT_NAME"/> 設定。一登入帳戶，就能自動登入您喜愛的各種 Google 服務。</translation>
 <translation id="7222232353993864120">電子郵件地址</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="7175353351958621980">載入來源：</translation>
@@ -2463,7 +2459,7 @@
 <translation id="1752977958630076881">僅將本機資料保留到我離開瀏覽器為止</translation>
 <translation id="7853202427316060426">活動</translation>
 <translation id="8550022383519221471">您的網域無法使用同步處理服務</translation>
-<translation id="1436238710092600782">建立 Google 帳戶</translation>
+<translation id="8612897762498195031">建立 BitPop 帳戶</translation>
 <translation id="3355823806454867987">變更 Proxy 設定...</translation>
 <translation id="2882324896611949356">啟用 Google 聯絡人下載功能，並在「應用程式清單」中顯示這些聯絡人。</translation>
 <translation id="4780374166989101364">啟用實驗性擴充功能 API。請注意，任何使用了實驗性 API 的擴充功能都無法上傳到擴充功能庫。</translation>
@@ -2557,7 +2553,7 @@
 <translation id="8314066201485587418">當我離開瀏覽器時，清除 Cookie 和其他網站資料</translation>
 <translation id="4094105377635924481">新增群組至分頁內容選單</translation>
 <translation id="765676359832457558">隱藏進階設定...</translation>
-<translation id="7626032353295482388">歡迎使用 Chrome</translation>
+<translation id="185658551912723674">歡迎使用 BitPop</translation>
 <translation id="8655295600908251630">頻道</translation>
 <translation id="8250690786522693009">拉丁文</translation>
 <translation id="2119721408814495896">您必須安裝 Microsoft XML Paper Specification Essentials Pack，才能與 <ph name="CLOUD_PRINT_NAME"/> 建立連線。</translation>
@@ -2948,7 +2944,7 @@
 <translation id="9072684888578654899">&lt;p&gt;
           這裡會顯示您在其他裝置中的 Chrome 所開啟的分頁。
           &lt;/p&gt;
-          &lt;a href=&quot;#enablesync&quot;&gt;
+          &lt;a href="#enablesync"&gt;
           啟用同步處理功能。
           &lt;/p&gt;</translation>
 <translation id="889901481107108152">很抱歉，這項實驗功能無法支援您的平台。</translation>
@@ -3096,7 +3092,7 @@
 <translation id="6007237601604674381">移動失敗，<ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">封裝過程中建立暫存壓縮檔失敗。</translation>
 <translation id="1881456419707551346">連線詳細資料</translation>
-<translation id="1064912851688322329">中斷您「Google 帳戶」的連線</translation>
+<translation id="1175819364738375266">中斷您「Facebook/BitPop 帳戶」的連線</translation>
 <translation id="1294298200424241932">編輯信任設定：</translation>
 <translation id="1407135791313364759">全部開啟</translation>
 <translation id="1434928358870966081">停用加速 2D canvas</translation>
@@ -3301,7 +3297,7 @@
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">必須為有效的網址</translation>
 <translation id="3464726836683998962">停用行動數據漫遊</translation>
-<translation id="8986494364107987395">自動傳送使用統計資料及當機報告給 Google</translation>
+<translation id="7133428520955276418">自動傳送使用統計資料及當機報告給 House of Life</translation>
 <translation id="7070714457904110559">為地理位置功能啟用實驗性擴充功能，包括使用作業系統位置 API (如適用)，並且將其他當地網路設定資料傳送到 Google 位置服務，提供更為精確的定位服務。</translation>
 <translation id="6701535245008341853">無法取得設定檔。</translation>
 <translation id="8303655282093186569">拼音輸入法設定</translation>
@@ -3336,7 +3332,7 @@
 <translation id="4762295713053835808">個人化設定</translation>
 <translation id="3445092916808119474">設為主要設定</translation>
 <translation id="6374100501221763867">停用硬體加速視訊解碼。</translation>
-<translation id="7477347901712410606">如果您忘記通關密語，請透過「<ph name="BEGIN_LINK"/>Google 資訊主頁<ph name="END_LINK"/>」停止並重設同步功能。</translation>
+<translation id="1257410854647617646">如果您忘記通關密語，請透過「<ph name="BEGIN_LINK"/>BitPop 資訊主頁<ph name="END_LINK"/>」停止並重設同步功能。</translation>
 <translation id="3085235303151103497">啟用封裝應用程式除錯。</translation>
 <translation id="2645575947416143543">如果您任職的機構使用自行產生的憑證，而您嘗試連線到使用此類憑證的機構內部網站，以下作法可以解決這個問題，並且絕對安全：將貴機構的根憑證匯入為「根憑證」，系統即會信任由貴機構發行或認證的憑證，並允許您連至內部網站，不再出現錯誤訊息。如要在電腦中加入新的根憑證，請與貴機構的協助人員聯絡。</translation>
 <translation id="1056898198331236512">警告</translation>
@@ -3536,7 +3532,7 @@
 <translation id="4971925105143343452">局部</translation>
 <translation id="3454157711543303649">啟用完成</translation>
 <translation id="884923133447025588">未發現撤銷機制。</translation>
-<translation id="7801746894267596941">您必須使用通關密語，才能讀取加密保護的檔案 -- 系統不會將通關密語傳送給 Google，Google 也不會儲存通關密語。如果您忘記自己的通關密語，則必須</translation>
+<translation id="2077681924461579449">您必須使用通關密語，才能讀取加密保護的檔案 -- 系統不會將通關密語傳送給 BitPop，Google 也不會儲存通關密語。如果您忘記自己的通關密語，則必須</translation>
 <translation id="5406835729608468430">選擇檢視方式…</translation>
 <translation id="291886813706048071">您可以從這裡使用 <ph name="SEARCH_ENGINE"/> 進行搜尋</translation>
 <translation id="556042886152191864">按鈕</translation>
@@ -3720,7 +3716,7 @@
 <translation id="8948393169621400698">永遠允許在 <ph name="HOST"/> 使用外掛程式</translation>
 <translation id="6527303717912515753">分享</translation>
 <translation id="4285498937028063278">取消固定</translation>
-<translation id="2588322182880276190">Chrome 標誌</translation>
+<translation id="193954205383164322">BitPop 標誌</translation>
 <translation id="7893008570150657497">存取您電腦中的相片、音樂及其他媒體</translation>
 <translation id="5449624072515809082">開啟輸入文字時的自動修正功能 (同步拼字檢查功能與這項功能不相容)。</translation>
 <translation id="8291808604460602261">允許網路關聯結構啟用我的應用程式連結功能</translation>
@@ -4064,7 +4060,7 @@
 <translation id="3021678814754966447">檢視頁框原始碼(&amp;V)</translation>
 <translation id="8601206103050338563">TLS WWW 用戶端驗證</translation>
 <translation id="1692799361700686467">系統允許使用多個網站的 Cookie。</translation>
-<translation id="5187295959347858724">您已登入 <ph name="SHORT_PRODUCT_NAME"/>，系統正在將您的書籤、記錄和其他設定與「Google 帳戶」進行同步處理。</translation>
+<translation id="6928105098560478094">您已登入 <ph name="SHORT_PRODUCT_NAME"/>，系統正在將您的書籤、記錄和其他設定與「BitPop 帳戶」進行同步處理。</translation>
 <translation id="7381706763856392587">已刪除「<ph name="FILENAME"/>」</translation>
 <translation id="529232389703829405">您已於 <ph name="DATE"/>購買了 <ph name="DATA_AMOUNT"/> 的數據傳輸方案</translation>
 <translation id="7419106976560586862">設定檔路徑</translation>
@@ -4132,7 +4128,7 @@
 <translation id="6692173217867674490">通關密語有誤</translation>
 <translation id="5550431144454300634">自動修正輸入錯誤</translation>
 <translation id="3308006649705061278">組織單位 (OU)</translation>
-<translation id="8912362522468806198">Google 帳戶</translation>
+<translation id="9034203691147880734">BitPop 帳戶</translation>
 <translation id="4839847978919684242">已選取 <ph name="SELCTED_FILES_COUNT"/> 個項目</translation>
 <translation id="4443536555189480885">說明(&amp;H)</translation>
 <translation id="6993309531105463648">停用針對一個及兩個瀏覽器/應用程式的自動設定視窗位置功能。</translation>
@@ -4500,7 +4496,7 @@
 <translation id="1177437665183591855">不明伺服器憑證錯誤</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> 要求使用相機和麥克風。</translation>
 <translation id="8467473010914675605">韓文輸入法</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> 會以安全的方式將您的資料與 Google 帳戶進行同步處理。您可以選擇同步處理所有資料，或自訂要同步處理的資料類型與加密設定。</translation>
+<translation id="7938022885346429483"><ph name="PRODUCT_NAME"/> 會以安全的方式將您的資料與 BitPop 帳戶進行同步處理。您可以選擇同步處理所有資料，或自訂要同步處理的資料類型與加密設定。</translation>
 <translation id="2639739919103226564">狀態：</translation>
 <translation id="824543159844843373">啟用啟動器項目 3</translation>
 <translation id="6923900367903210484">版權</translation>
@@ -4528,7 +4524,7 @@
 <translation id="2101797668776986011">Pepper 3D</translation>
 <translation id="1581962803218266616">在 Finder 中顯示</translation>
 <translation id="9100765901046053179">進階設定</translation>
-<translation id="203168018648013061">同步功能錯誤：請透過「Google 資訊主頁」重設「同步功能」。</translation>
+<translation id="2936690273131526650">同步功能錯誤：請透過「BitPop 資訊主頁」重設「同步功能」。</translation>
 <translation id="1405126334425076373">滑鼠游標</translation>
 <translation id="6671493224572088110">觀看 <ph name="VIDEO_NAME"/></translation>
 <translation id="6096326118418049043">X.500 姓名</translation>
@@ -4649,7 +4645,7 @@
 <translation id="2050339315714019657">縱向</translation>
 <translation id="6978839998405419496"><ph name="NUMBER_ZERO"/> days ago</translation>
 <translation id="8273027367978594412">啟用後，使用者即可以訪客身分登入電腦上的 Chrome。</translation>
-<translation id="8188199528179562676">中斷 Google 帳戶與 <ph name="PRODUCT_NAME"/> 的連線後，在這個行動裝置上變更的資料就不會繼續同步處理到您的 Google 帳戶中。除非您透過 <ph name="BEGIN_LINK"/>Google 資訊主頁<ph name="END_LINK"/>移除這些資料，否則已儲存在 Google 帳戶中的資料將保持不變。</translation>
+<translation id="3972854587947107012">中斷 BitPop 帳戶與 <ph name="PRODUCT_NAME"/> 的連線後，在這個行動裝置上變更的資料就不會繼續同步處理到您的 Google 帳戶中。除非您透過 <ph name="BEGIN_LINK"/>Google 資訊主頁<ph name="END_LINK"/>移除這些資料，否則已儲存在 Google 帳戶中的資料將保持不變。</translation>
 <translation id="8261490674758214762">可用權限：</translation>
 <translation id="5112577000029535889">開發人員工具(&amp;D)</translation>
 <translation id="2301382460326681002">擴充功能根目錄無效。</translation>

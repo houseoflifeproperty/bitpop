@@ -58,9 +58,9 @@ cr.define('sync_promo', function() {
     initializePage: function() {
       options.SyncSetupOverlay.prototype.initializePage.call(this);
 
-      // Hide parts of the login UI and show the promo UI.
+      // Cancel: // Hide parts of the login UI and show the promo UI.
       this.hideOuterLoginUI_();
-      $('promo-skip').hidden = false;
+      // $('promo-skip').hidden = false;
 
       chrome.send('SyncPromo:Initialize');
 
@@ -82,31 +82,29 @@ cr.define('sync_promo', function() {
         chrome.send('SyncPromo:ShowAdvancedSettings');
       });
 
-      var accountHelpClickedAlready = false;
-      $('cannot-access-account-link').addEventListener('click', function() {
-        if (!accountHelpClickedAlready)
-          chrome.send('SyncPromo:UserFlowAction',
-                      [actions.ACCOUNT_HELP_CLICKED]);
-        accountHelpClickedAlready = true;
-      });
-
-      var createAccountClickedAlready = false;
-      $('create-account-link').addEventListener('click', function() {
-        if (!createAccountClickedAlready)
-          chrome.send('SyncPromo:UserFlowAction',
-                      [actions.CREATE_ACCOUNT_CLICKED]);
-        createAccountClickedAlready = true;
-      });
-
       // We listen to the <form>'s submit vs. the <input type="submit"> click so
       // we also track users that use the keyboard and press enter.
       var signInAttemptedAlready = false;
-      $('gaia-login-form').addEventListener('submit', function() {
-        ++self.signInAttempts_;
-        if (!signInAttemptedAlready)
-          chrome.send('SyncPromo:UserFlowAction', [actions.SIGN_IN_ATTEMPTED]);
-        signInAttemptedAlready = true;
-      });
+
+      // The
+      var argsDict = SyncPromo.getPageArgumentsDictionary();
+
+      document.getElementsByClassName('sync_setup_wrap')[0].style.display =
+          'table';
+      var strArgs = JSON.stringify(argsDict);
+      if (argsDict.token && argsDict.type && argsDict.email)
+        this.sendCredentialsAndClose_(strArgs);
+      else if (argsDict.message) {
+        chrome.send('SyncPromo:InitializeError', [ strArgs ]);
+      } else {
+        chrome.send('SyncPromo:InitializeError',
+                    [ JSON.stringify({"message": "Invalid page arguments"}) ]);
+      }
+
+      ++self.signInAttempts_;
+      if (!signInAttemptedAlready)
+         chrome.send('SyncPromo:UserFlowAction', [actions.SIGN_IN_ATTEMPTED]);
+      signInAttemptedAlready = true;
 
       var encryptionHelpClickedAlready = false;
       $('encryption-help-link').addEventListener('click', function() {
@@ -222,6 +220,17 @@ cr.define('sync_promo', function() {
     SyncPromo.getInstance().populatePromoMessage_(resName);
   };
 
+  SyncPromo.getPageArgumentsDictionary = function() {
+    var allowedArgs = [ 'state', 'token', 'type', 'email', 'backend', 'message', 'fb_login' ];
+    var args = parseQueryParams(document.location);
+    for (var arg in args) {
+      if (args.hasOwnProperty(arg) && allowedArgs.indexOf(arg) == -1) {
+        delete args[arg];
+      }
+    }
+    return args;
+  };
+
   // Export
   return {
     SyncPromo: SyncPromo
@@ -230,6 +239,39 @@ cr.define('sync_promo', function() {
 
 var OptionsPage = options.OptionsPage;
 var SyncSetupOverlay = sync_promo.SyncPromo;
-window.addEventListener('DOMContentLoaded', sync_promo.SyncPromo.initialize);
-window.addEventListener('unload',
-    sync_promo.SyncPromo.onUnload.bind(sync_promo.SyncPromo));
+(function() {
+  var argsDict = SyncSetupOverlay.getPageArgumentsDictionary();
+
+  if (argsDict.token || argsDict.message) {
+    window.addEventListener('DOMContentLoaded',
+                            sync_promo.SyncPromo.initialize);
+    window.addEventListener('unload',
+       sync_promo.SyncPromo.onUnload.bind(sync_promo.SyncPromo));
+  } else if (argsDict.state) {
+    window.addEventListener('DOMContentLoaded',
+      function() {
+        $('facebooklogin').href += argsDict.state;
+        $('bitpoplogin').href += argsDict.state;
+      });
+  } else {
+    var state = "2";
+    var chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    var numChars = 32;
+    for (var i = 0; i < numChars-1; i++) {
+      state += chars[Math.round(Math.random() * (chars.length - 1))];
+    }
+    localStorage.setItem('state', state);
+
+    chrome.send('SyncPromo:StateSet', [ state ]);
+
+    if (argsDict.fb_login) {
+      document.location.href = 'https://sync.bitpop.com/login/facebook/' + state;
+    }
+
+    window.addEventListener('DOMContentLoaded',
+      function() {
+        $('facebooklogin').href += state;
+        $('bitpoplogin').href += state;
+      });
+  }
+})();

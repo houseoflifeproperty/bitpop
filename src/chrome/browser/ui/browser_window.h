@@ -18,6 +18,7 @@
 class Browser;
 class BrowserWindowTesting;
 class DownloadShelf;
+class FacebookChatbar;
 class FindBar;
 class GURL;
 class LocationBar;
@@ -233,6 +234,15 @@ class BrowserWindow : public BaseWindow {
 
   // Returns the DownloadShelf.
   virtual DownloadShelf* GetDownloadShelf() = 0;
+
+  virtual bool IsChatbarVisible() const = 0;
+  virtual FacebookChatbar* GetChatbar() = 0;
+
+  // Whether or not the facebook friends sidebar is visible
+  virtual bool IsFriendsSidebarVisible() const = 0;
+
+  // Shows/hide the sidebar
+  virtual void SetFriendsSidebarVisible(bool visible) = 0;
 
   // Shows the confirmation dialog box warning that the browser is closing with
   // in-progress downloads.

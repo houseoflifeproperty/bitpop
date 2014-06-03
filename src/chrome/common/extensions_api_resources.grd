@@ -10,6 +10,8 @@
   <release seq="1">
     <includes>
       <include name="IDR_EXTENSION_API_JSON_APP" file="extensions\api\app.json" type="BINDATA" />
+      <include name="IDR_EXTENSION_API_JSON_BITPOP" file="extensions\api\bitpop.json" type="BINDATA" />
+      <include name="IDR_EXTENSION_API_JSON_BITPOP_FACEBOOK_CHAT" file="extensions\api\bitpop_facebook_chat.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_BOOKMARKS" file="extensions\api\bookmarks.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_BOOKMARKMANAGERPRIVATE" file="extensions\api\bookmark_manager_private.json" type="BINDATA" />
       <include name="IDR_EXTENSION_API_JSON_BROWSERACTION" file="extensions\api\browser_action.json" type="BINDATA" />

@@ -177,7 +177,8 @@ base::RefCountedMemory* CrashesUI::GetFaviconResourceBytes(
 
 // static
 bool CrashesUI::CrashReportingEnabled() {
-#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
+//#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
   PrefService* prefs = g_browser_process->local_state();
   return prefs->GetBoolean(prefs::kMetricsReportingEnabled);
 #elif defined(GOOGLE_CHROME_BUILD) && defined(OS_CHROMEOS)

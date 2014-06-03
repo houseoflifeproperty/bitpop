@@ -1,0 +1,87 @@
+<div id="bitpop-settings" class="page" hidden>
+  <header>
+    <h1 i18n-content="bitpopSettingsTitle"></h1>
+  </header>
+
+  <!-- Facebook Sidebar options -->
+  <section>
+    <h3 i18n-content="sectionTitleBitpopFacebookSidebar"></h3>
+    <div>
+      <div class="checkbox"><label>
+        <input type="checkbox" id="facebook-show-chat" pref="bitpop.facebook_show_chat">
+        <span i18n-content="facebookShowChat"></span>
+      </label></div>
+    </div>
+  </section>
+
+  <!-- Facebook Notifications options -->
+  <section>
+    <h3 i18n-content="sectionTitleFacebookNotifications"></h3>
+    <div>
+      <button id="open-facebook-notifications-options"
+        i18n-content="openFacebookNotificationsOptions" class="link-button"></button>
+    </div>
+  </section>
+
+  <!-- uncensor_domains options -->
+  <!-- NB! remove actual texts, make it load strings instead -->
+  <section>
+    <h3 i18n-content="sectionTitleUncensorFilterControl">Filter control</h3>
+    <div>
+      <div class="radio">
+        <label><input type="radio" id="uncensor-always-redirect" name="shouldRedirect" value="0" pref="bitpop.uncensor_should_redirect">
+          <span i18n-content="uncensorAlwaysRedirectOn">Always redirect / ON</span></label>
+      </div>
+      <div class="radio">
+        <label><input type="radio" id="uncensor-never-redirect" name="shouldRedirect" value="1" pref="bitpop.uncensor_should_redirect">
+          <span i18n-content="uncensorNeverRedirectOff">Never redirect / OFF</span></label>
+      </div>
+      <br/>
+      <div class="checkbox">
+        <label><input type="checkbox" id="uncensor-show-message" name="showMessage" pref="bitpop.uncensor_show_message">
+          <span i18n-content="uncensorShowMessage">Show message when redirected</span></label>
+      </div>
+      <div class="checkbox">
+        <label><input type="checkbox" id="uncensor-notify-update" name="notifyUpdate" pref="bitpop.uncensor_notify_updates">
+          <span i18n-content="uncensorNotifyUpdates">Be notified when list updates</span></label>
+      </div>
+      <br/>
+      <button id="open-uncensor-filter-lists" class="link-button" i18n-content="openUncensorFilterLists"></button>
+    </div>
+  </section>
+
+  <!-- uncensor_proxy options -->
+  <section>
+    <h3 i18n-content="sectionTitleGlobalProxyControl"></h3>
+    <div>
+      <label i18n-content="whenToUseProxy"></label>
+      <div class="radio">
+        <label><input type="radio" name="globalProxyControl" id="use-auto-proxy" value="0" pref="bitpop.global_proxy_control">
+          <span i18n-content="useAutoProxy"></span></label>
+      </div>
+      <div class="radio">
+        <label><input type="radio" name="globalProxyControl" id="never-use-proxy" value="1" pref="bitpop.global_proxy_control">
+          <span i18n-content="neverUseProxy"></span></label>
+      </div>
+      <div class="radio">
+        <label><input type="radio" name="globalProxyControl" id="ask-before-using" value="2" pref="bitpop.global_proxy_control">
+          <span i18n-content="askBeforeUsing"></span></label>
+      </div>
+      <br/>
+      <div class="checkbox">
+        <label><input type="checkbox" id="show-message-for-active-proxy" pref="bitpop.show_message_for_active_proxy">
+          <span i18n-content="showMessageForActiveProxy"></span></label>
+      </div>
+      <br/>
+      <button id="open-proxy-domain-settings" class="link-button"
+        i18n-content="openProxyDomainSettings"></button>
+    </div>
+  </section>
+  <footer>
+  </footer>
+
+  <div id="advanced-settings" hidden>
+    <div id="advanced-settings-container"></div>
+  </div>
+</div>
+

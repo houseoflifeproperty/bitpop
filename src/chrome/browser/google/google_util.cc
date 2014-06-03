@@ -286,7 +286,7 @@ bool IsOrganic(const std::string& brand) {
       "CHOQ", "CHOR", "CHOS", "CHOT", "CHOU", "CHOX", "CHOY", "CHOZ",
       "CHPD", "CHPE", "CHPF", "CHPG", "ECBA", "ECBB", "ECDA", "ECDB",
       "ECSA", "ECSB", "ECVA", "ECVB", "ECWA", "ECWB", "ECWC", "ECWD",
-      "ECWE", "ECWF", "EUBB", "EUBC", "GGLA", "GGLS"
+      "ECWE", "ECWF", "EUBB", "EUBC", "GGLA", "GGLS", "ISOH"
   };
   const char* const* end = &kBrands[arraysize(kBrands)];
   const char* const* found = std::find(&kBrands[0], end, brand);

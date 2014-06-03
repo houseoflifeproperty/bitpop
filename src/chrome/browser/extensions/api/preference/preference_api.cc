@@ -110,6 +110,50 @@ PrefMappingEntry kPrefMapping[] = {
   { "translationServiceEnabled",
     prefs::kEnableTranslate,
     APIPermission::kPrivacy
+  },
+  { "facebookShowChat",
+    prefs::kFacebookShowChat,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "facebookShowJewels",
+    prefs::kFacebookShowJewels,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "uncensorShouldRedirect",
+    prefs::kUncensorShouldRedirect,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "uncensorShowMessage",
+    prefs::kUncensorShowMessage,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "uncensorNotifyUpdates",
+    prefs::kUncensorNotifyUpdates,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "uncensorDomainFilter",
+    prefs::kUncensorDomainFilter,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "uncensorDomainExceptions",
+    prefs::kUncensorDomainExceptions,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "globalProxyControl",
+    prefs::kGlobalProxyControl,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "showMessageForActiveProxy",
+    prefs::kShowMessageForActiveProxy,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "ipRecognitionCountryName",
+    prefs::kIPRecognitionCountryName,
+    APIPermission::kBitpopFacebookChat
+  },
+  { "blockedSitesList",
+    prefs::kBlockedSitesList,
+    APIPermission::kBitpopFacebookChat
   }
 };
 

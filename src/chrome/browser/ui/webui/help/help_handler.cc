@@ -63,7 +63,7 @@ string16 BuildBrowserVersionString() {
   if (!version_modifier.empty())
     browser_version += " " + version_modifier;
 
-#if !defined(GOOGLE_CHROME_BUILD)
+#if 0 //!defined(GOOGLE_CHROME_BUILD)
   browser_version += " (";
   browser_version += version_info.LastChange();
   browser_version += ")";

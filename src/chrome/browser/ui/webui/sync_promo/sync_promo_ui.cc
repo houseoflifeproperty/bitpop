@@ -106,7 +106,7 @@ SyncPromoUI::SyncPromoUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   SyncPromoUIHTMLSource* html_source = new SyncPromoUIHTMLSource(web_ui);
   html_source->set_json_path(kStringsJsFile);
   html_source->add_resource_path(kSyncPromoJsFile, IDR_SYNC_PROMO_JS);
-  html_source->set_default_resource(IDR_SYNC_PROMO_HTML);
+  html_source->set_default_resource(IDR_SYNC_PROMO_WELCOME_HTML);
   html_source->set_use_json_js_format_v2();
   ChromeURLDataManager::AddDataSource(profile, html_source);
 
@@ -196,11 +196,11 @@ bool SyncPromoUI::ShouldShowSyncPromoAtStartup(Profile* profile,
     return false;
 
   // Default to show the promo for Google Chrome builds.
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
   return true;
-#else
-  return false;
-#endif
+//#else
+//  return false;
+//#endif
 }
 
 void SyncPromoUI::DidShowSyncPromoAtStartup(Profile* profile) {

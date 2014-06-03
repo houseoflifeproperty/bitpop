@@ -22,8 +22,8 @@ namespace {
 const wchar_t kExperimentLabels[] = L"experiment_labels";
 
 const wchar_t* kExperimentAppGuids[] = {
-    L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}",
-    L"{8A69D345-D564-463C-AFF1-A69D9E530F96}",
+    L"{B2A30819-3DA9-44A4-93AC-E02724D3BFA0}",
+    L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}",
 };
 
 const wchar_t* kDays[] =

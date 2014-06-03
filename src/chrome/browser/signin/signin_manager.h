@@ -174,6 +174,7 @@ class SigninManager : public GaiaAuthConsumer,
   };
 
   friend class FakeSigninManager;
+  friend class SyncSetupHandler;
   FRIEND_TEST_ALL_PREFIXES(SigninManagerTest, ClearTransientSigninData);
   FRIEND_TEST_ALL_PREFIXES(SigninManagerTest, ProvideSecondFactorSuccess);
   FRIEND_TEST_ALL_PREFIXES(SigninManagerTest, ProvideSecondFactorFailure);

@@ -575,6 +575,21 @@
         'browser/external_protocol/external_protocol_observer.cc',
         'browser/external_protocol/external_protocol_observer.h',
         'browser/external_tab/external_tab_container.h',
+        'browser/facebook_chat/facebook_bitpop_notification.cc',
+        'browser/facebook_chat/facebook_bitpop_notification.h',
+        'browser/facebook_chat/facebook_bitpop_notification_service_factory.cc',
+        'browser/facebook_chat/facebook_bitpop_notification_service_factory.h',
+        'browser/facebook_chat/facebook_chatbar.h',
+        'browser/facebook_chat/facebook_chat_manager.cc',
+        'browser/facebook_chat/facebook_chat_manager.h',
+        'browser/facebook_chat/facebook_chat_manager_service_factory.cc',
+        'browser/facebook_chat/facebook_chat_manager_service_factory.h',
+        'browser/facebook_chat/facebook_chat_item.cc',
+        'browser/facebook_chat/facebook_chat_item.h',
+        'browser/facebook_chat/facebook_chat_create_info.cc',
+        'browser/facebook_chat/facebook_chat_create_info.h',
+        'browser/facebook_chat/received_message_info.cc',
+        'browser/facebook_chat/received_message_info.h',
         'browser/favicon/favicon_handler.cc',
         'browser/favicon/favicon_handler.h',
         'browser/favicon/favicon_handler_delegate.h',
@@ -1801,6 +1816,10 @@
         'browser/signin/signin_manager_factory.h',
         'browser/signin/signin_names_io_thread.cc',
         'browser/signin/signin_names_io_thread.h',
+        'browser/signin/signin_result_page_tracker.cc',
+        'browser/signin/signin_result_page_tracker.h',
+        'browser/signin/signin_result_page_tracker_factory.cc',
+        'browser/signin/signin_result_page_tracker_factory.h',
         'browser/signin/signin_tracker.cc',
         'browser/signin/signin_tracker.h',
         'browser/signin/token_service.cc',
@@ -2807,6 +2826,7 @@
           },
           'dependencies': [
             '../third_party/icon_family/icon_family.gyp:icon_family',
+            '../third_party/Sparkle/Sparkle_custom.gyp:Sparkle',
           ],
           'sources': [
             # Build the necessary GTM sources
@@ -2816,6 +2836,7 @@
           'include_dirs': [
             '../third_party/GTM',
             '../third_party/GTM/Foundation',
+            '<(PRODUCT_DIR)/Sparkle.framework/Headers',
           ],
         }],
         ['enable_rlz==1', {

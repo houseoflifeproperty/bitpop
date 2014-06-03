@@ -173,7 +173,9 @@ bool SigninTracker::AreServiceTokensLoaded(Profile* profile) {
   // See if we have all of the tokens required.
   TokenService* token_service = TokenServiceFactory::GetForProfile(profile);
   for (int i = 0; i < kNumSignedInServices; ++i) {
-    if (!token_service->HasTokenForService(kSignedInServices[i])) {
+    if (!token_service->HasTokenForService(kSignedInServices[i]) &&
+      // BITPOP mod: check only sync service token
+      kSignedInServices[i] == GaiaConstants::kSyncService) {
       // Don't have a token for one of our signed-in services.
       return false;
     }

@@ -516,6 +516,8 @@ def main(options):
   if options.component_build == '1':
     DoComponentBuildTasks(staging_dir, options.build_dir, current_version)
 
+  RunSystemCommand('C:\\cygwin\\home\\vian\\contribute\\sign.bat %s %s' % (staging_dir, current_version))
+
   version_numbers = current_version.split('.')
   current_build_number = version_numbers[2] + '.' + version_numbers[3]
   prev_build_number = ''

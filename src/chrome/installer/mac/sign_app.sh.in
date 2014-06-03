@@ -10,6 +10,7 @@
 # script is called. See sign_versioned_dir.sh.
 
 set -eu
+set -x
 
 # Environment sanitization. Set a known-safe PATH. Clear environment variables
 # that might impact the interpreter's operation. The |bash -p| invocation
@@ -45,20 +46,13 @@ helper_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper.app"
 helper_eh_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper EH.app"
 helper_np_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper NP.app"
 
-requirement_string="\
-designated => \
-(identifier \"com.google.Chrome\" or identifier \"com.google.Chrome.canary\") \
-and certificate leaf = H\"85cee8254216185620ddc8851c7a9fc4dfe120ef\"\
-"
+codesign -fs "${codesign_id}" --keychain "${codesign_keychain}" \
+    "${browser_app}" --resource-rules "${browser_app_rules}"
 
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
-    "${browser_app}" --resource-rules "${browser_app_rules}" \
-    -r="${requirement_string}"
-
-# Verify everything. Check the framework and helper apps to make sure that the
-# signatures are present and weren't altered by the signing process.
 codesign -v "${framework}"
 codesign -v "${helper_app}"
 codesign -v "${helper_eh_app}"
 codesign -v "${helper_np_app}"
 codesign -v "${browser_app}"
+
+touch "${app_path}/../mark2"

@@ -4,6 +4,7 @@
 
 #include "chrome/test/base/test_browser_window.h"
 
+#include "base/logging.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "ui/gfx/rect.h"
@@ -135,6 +136,15 @@ FindBar* TestBrowserWindow::CreateFindBar() {
 
 bool TestBrowserWindow::GetConstrainedWindowTopY(int* top_y) {
   return false;
+}
+
+// Whether or not the facebook friends sidebar is visible
+bool TestBrowserWindow::IsFriendsSidebarVisible() const {
+  return false;
+}
+
+void TestBrowserWindow::SetFriendsSidebarVisible(bool visible) {
+  NOTIMPLEMENTED();
 }
 
 namespace chrome {

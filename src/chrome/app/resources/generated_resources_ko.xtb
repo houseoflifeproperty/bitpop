@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ko">
 <translation id="6879617193011158416">북마크바 전환</translation>
@@ -66,7 +66,7 @@
 <translation id="4940047036413029306">인용</translation>
 <translation id="1497897566809397301">로컬 데이터 설정 허용(권장)</translation>
 <translation id="3275778913554317645">창으로 열기</translation>
-<translation id="4553117311324416101">계속할 경우 컴퓨터에 설치될 수 있는 악성 소프트웨어를 찾았습니다. 과거에 방문한 적이 있거나 신뢰하는 사이트라면 최근에 해킹당했을 수 있습니다. 더 이상 진행하지 않는 것이 안전하며 내일 다시 시도하거나 다른 사이트를 방문하세요.</translation>
+<translation id="8198393002783366468">계속할 경우 컴퓨터에 설치될 수 있는 악성 소프트웨어를 찾았습니다. 과거에 방문한 적이 있거나 신뢰하는 사이트라면 최근에 해킹당했을 수 있습니다. 더 이상 진행하지 않는 것이 안전하며 내일 다시 시도하거나 다른 사이트를 방문하세요.</translation>
 <translation id="8867568208303837180">보내는 중...</translation>
 <translation id="509988127256758334">찾는 대상(&amp;N):</translation>
 <translation id="1420684932347524586">임의의 RSA 비공개 키를 생성하지 못했습니다.</translation>
@@ -228,7 +228,7 @@
 <translation id="1818606096021558659">페이지</translation>
 <translation id="1549045574060481141">다운로드 확인</translation>
 <translation id="5388588172257446328">사용자 이름:</translation>
-<translation id="1657406563541664238">사용 통계 및 충돌 보고서가 Google로 자동 전송되게 하여 <ph name="PRODUCT_NAME"/> 개선에 도움 주기</translation>
+<translation id="5757566435961687655">사용 통계 및 충돌 보고서가 House of Life로 자동 전송되게 하여 <ph name="PRODUCT_NAME"/> 개선에 도움 주기</translation>
 <translation id="7982789257301363584">네트워크</translation>
 <translation id="2271281383664374369">확장 프로그램이 해당 URL로 요청한 서버 전송 허용을 일시적으로 중지했습니다.</translation>
 <translation id="8528962588711550376">로그인 중입니다.</translation>
@@ -244,7 +244,7 @@
 <translation id="1776883657531386793"><ph name="OID"/>: <ph name="INFO"/></translation>
 <translation id="1510030919967934016">이 페이지는 위치 추적이 차단되었습니다.</translation>
 <translation id="8848519885565996859">사용자 정의 URL 링크 프레임</translation>
-<translation id="4640525840053037973">Google 계정으로 로그인</translation>
+<translation id="4550196943338771146">BitPop 계정으로 로그인</translation>
 <translation id="5255315797444241226">입력한 암호가 잘못되었습니다.</translation>
 <translation id="762917759028004464">현재 기본 브라우저는 <ph name="BROWSER_NAME"/>입니다.</translation>
 <translation id="9213479837033539041"><ph name="NUMBER_MANY"/>초 남음</translation>
@@ -293,8 +293,8 @@
           입력하고
           <ph name="BEGIN_BOLD"/>확인<ph name="END_BOLD"/>을 클릭하세요.</translation>
 <translation id="2179052183774520942">검색엔진 추가</translation>
-<translation id="4043223219875055035">Google 계정으로 로그인하면 앱이 설정을 동기화하고 다른 맞춤설정 서비스를 제공하도록 허용할 수 있습니다.</translation>
-<translation id="6868050610674841964">로그인하면 데이터를 Google 계정과 동기화하기 때문에 모든 기기에서 북마크, 기록 및 기타 설정에 액세스할 수 있습니다.</translation>
+<translation id="7333287746989217896">BitPop 계정으로 로그인하면 앱이 설정을 동기화하고 다른 맞춤설정 서비스를 제공하도록 허용할 수 있습니다.</translation>
+<translation id="5804885986789001150">로그인하면 데이터를 Facebook/BitPop 계정과 동기화하기 때문에 모든 기기에서 북마크, 기록 및 기타 설정에 액세스할 수 있습니다.</translation>
 <translation id="5498951625591520696">서버에 연결할 수 없습니다.</translation>
 <translation id="1621207256975573490">프레임을 다른 이름으로 저장(&amp;F)...</translation>
 <translation id="4681260323810445443"><ph name="URL"/>의 웹페이지에 액세스할 수 있는 권한이 없습니다. 로그인해야 할 수 있습니다.</translation>
@@ -418,7 +418,7 @@
 <translation id="8194465509832052438">명령어 설정</translation>
 <translation id="4422347585044846479">이 페이지에 대한 북마크 편집</translation>
 <translation id="2452539774207938933">다음 사용자로 전환: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Chrome은 사용자가 브라우저에 입력한 내용을 Google 서버에 보내어 Google 검색에서 사용하는 기술과 동일한 맞춤법 검사 기술을 사용할 수 있게 함으로써 더욱 뛰어난 맞춤법 검사 기능을 제공할 수 있습니다.</translation>
+<translation id="8810891758424955762">Chrome은 사용자가 브라우저에 입력한 내용을 Google 서버에 보내어 Google 검색에서 사용하는 기술과 동일한 맞춤법 검사 기술을 사용할 수 있게 함으로써 더욱 뛰어난 맞춤법 검사 기능을 제공할 수 있습니다.</translation>
 <translation id="1880905663253319515">인증서 '<ph name="CERTIFICATE_NAME"/>'을(를) 삭제하시겠습니까?</translation>
 <translation id="8546306075665861288">이미지 캐시</translation>
 <translation id="1168100932582989117">Google 이름 서버</translation>
@@ -475,7 +475,7 @@
 서버 유형: <ph name="SERVER_TYPE"/>
 필드 서명: <ph name="FIELD_SIGNATURE"/>
 양식 서명: <ph name="FORM_SIGNATURE"/>
-실험 ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
+실험 ID: "<ph name="EXPERIMENT_ID"/>"</translation>
 <translation id="8656768832129462377">확인 안 함</translation>
 <translation id="715487527529576698">중국어 간체를 초기 중국어 모드로 설정</translation>
 <translation id="6896830120821965585">Google 클라우드 프린트 서비스를 이 컴퓨터에 설치된 모든 프린터에 연결하는 백그라운드 서비스를 사용하도록 설정합니다. 이 실험실 기능을 사용하면 Google 계정으로 로그인하여 설정의 고급 설정 섹션에서 Google 클라우드 프린트 커넥터를 사용하도록 설정할 수 있습니다.</translation>
@@ -506,7 +506,6 @@
 <translation id="1046059554679513793">이미 사용 중인 이름입니다.</translation>
 <translation id="3887847548716051874">이 사이트가 마이크와 카메라를 사용하도록 허용합니다.</translation>
 <translation id="4497097279402334319">네트워크에 연결하지 못했습니다.</translation>
-<translation id="7342729285348293164">Google 계정으로 <ph name="PRODUCT_NAME"/>에 로그인하면 맞춤설정된 브라우저 기능을 웹에 저장하고 어느 컴퓨터에서나 <ph name="PRODUCT_NAME"/>에서 해당 기능에 액세스할 수 있습니다. 또한 자동으로 즐겨찾는 Google 서비스로 로그인됩니다.</translation>
 <translation id="2542049655219295786">Google 표</translation>
 <translation id="3899879303189199559">1년 이상 오프라인 상태</translation>
 <translation id="5303618139271450299">해당 웹페이지를 찾을 수 없습니다.</translation>
@@ -653,7 +652,6 @@
 <translation id="773426152488311044">현재 유일한 <ph name="PRODUCT_NAME"/> 사용자입니다.</translation>
 <translation id="2042078858148122628">DNS 조회에 실패하여 <ph name="HOST_NAME"/>에서 서버를 찾을 수 없습니다. DNS는 웹사이트의 이름을 해당 인터넷 주소로 바꾸는 네트워크 서비스입니다. 이 오류는 대개 인터넷에 연결되지 않았거나 네트워크 설정이 잘못된 경우에 발생합니다. 또한 DNS 서버가 응답하지 않거나 방화벽으로 인해 <ph name="PRODUCT_NAME"/>이(가) 네트워크에 액세스하지 못하는 경우에도 발생할 수 있습니다.</translation>
 <translation id="2159087636560291862">이 경우에는 컴퓨터에서 신뢰하는 제3자에서 인증서를 확인하지 않았습니다. 누구나 인증서를 만들어 웹사이트가 자신의 것이라고 주장할 수 있기 때문에 신뢰할 수 있는 제3자가 확인하는 과정이 필요합니다. 이러한 확인이 없으면 인증서의 ID 정보는 무의미합니다. 따라서 <ph name="DOMAIN2"/> 도메인을 사칭하며 가짜 인증서를 생성한 공격자가 아닌 <ph name="DOMAIN"/> 도메인과 통신하고 있음을 확인할 수 없습니다. 더 이상 진행하지 않는 것이 안전합니다.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/>에서는 Google 비밀번호나 사용자 자신의 암호를 사용하여 데이터를 암호화해야 합니다.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">인증 기관 아님</translation>
 <translation id="6099520380851856040">발생 시간: <ph name="CRASH_TIME"/></translation>
@@ -673,7 +671,7 @@
 <translation id="9121814364785106365">고정 탭으로 열기</translation>
 <translation id="6292030868006209076">타밀어 입력 방법(itrans)</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_DOMAIN"/>의 <ph name="PEPPER_PLUGIN_NAME"/>이(가) 사용자 컴퓨터에 액세스하려고 합니다.</translation>
-<translation id="2128450505147514836">첨부 파일이 디버깅을 위해 Google 서버에 업로드되었습니다.&lt;br&gt;
+<translation id="7411702401114360503">첨부 파일이 디버깅을 위해 BitPop 서버에 업로드되었습니다.&lt;br&gt;
         참고: 의견 보고서 하나당 한 개의 파일을 첨부할 수 있습니다(최대 3MB).</translation>
 <translation id="3435896845095436175">사용</translation>
 <translation id="5849294688757445020">모든 페이지에서 GPU 합성</translation>
@@ -858,7 +856,7 @@
 <translation id="5120247199412907247">고급 설정</translation>
 <translation id="567881659373499783">버전 <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">안전 브라우징 개인정보 보호 정책</translation>
-<translation id="5105859138906591953">툴바의 북마크를 Chrome으로 가져오려면 Google 계정에 로그인되어 있어야 합니다. 로그인한 다음 가져오기를 다시 시도하세요.</translation>
+<translation id="5189894578581316474">툴바의 북마크를 BitPop으로 가져오려면 Google 계정에 로그인되어 있어야 합니다. 로그인한 다음 가져오기를 다시 시도하세요.</translation>
 <translation id="8899851313684471736">새 창에서 링크 열기(&amp;W)</translation>
 <translation id="4110342520124362335"><ph name="DOMAIN"/>의 쿠키를 차단했습니다.</translation>
 <translation id="2198315389084035571">중국어(간체)</translation>
@@ -927,7 +925,6 @@
 <translation id="1049376040497900836"><ph name="SHORT_PRODUCT_NAME"/>의 버전이 변경될 때 생기는 항목</translation>
 <translation id="1422780722984745882">여러 다른 위치 헤더를 수신했으나 HTTP 응답 분할 공격으로부터 보호하기 위해
         차단되었습니다.</translation>
-<translation id="7787129790495067395">현재 암호를 사용하고 있습니다. 암호를 잊은 경우 Google 대시보드를 사용하여 동기화를 재설정함으로써 Google 서버에서 데이터를 삭제할 수 있습니다.</translation>
 <translation id="721997939566478439">확인</translation>
 <translation id="6612611129072884913">이 페이지를 시작 화면에 고정...</translation>
 <translation id="3380365263193509176">알 수 없는 오류가 발생했습니다.</translation>
@@ -1053,7 +1050,7 @@
 <translation id="2955913368246107853">검색 바 닫기</translation>
 <translation id="8864170386249720785">휴대기기 전체 SSL 설정:</translation>
 <translation id="2560788951337264832"><ph name="NUMBER_ZERO"/> minutes left</translation>
-<translation id="3914942725612686145">이제 Chrome에 로그인되었습니다. 열린 탭, 북마크 및 검색주소창 데이터가 내 Google 계정과 동기화되고 있습니다.</translation>
+<translation id="6896530527102607056">이제 Chrome에 로그인되었습니다. 열린 탭, 북마크 및 검색주소창 데이터가 내 Facebook/BitPop 계정과 동기화되고 있습니다.</translation>
 <translation id="5642508497713047">CRL 서명자</translation>
 <translation id="813082847718468539">사이트 정보 보기</translation>
 <translation id="127353061808977798">글꼴 및 인코딩</translation>
@@ -1408,7 +1405,7 @@
 <translation id="7092106376816104">팝업 예외</translation>
 <translation id="4830475881783902092">클라이언트 ID:</translation>
 <translation id="4600958291864306415">생성 중...</translation>
-<translation id="8594787581355215556"><ph name="USER_EMAIL_ADDRESS"/>(으)로 로그인되었습니다. <ph name="BEGIN_LINK"/>Google 대시보드<ph name="END_LINK"/>에서 동기화된 데이터를 관리합니다.</translation>
+<translation id="2669230071943955873"><ph name="USER_EMAIL_ADDRESS"/>(으)로 로그인되었습니다. <ph name="BEGIN_LINK"/>BitPop 대시보드<ph name="END_LINK"/>에서 동기화된 데이터를 관리합니다.</translation>
 <translation id="4338600611020922010">홈 화면에 추가</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/>에서 설치를 완료하지 못했지만 디스크 이미지에서 계속 실행됩니다.</translation>
 <translation id="1952837113524940233">새 네트워크 핸들러 사용</translation>
@@ -1428,7 +1425,7 @@
 <translation id="4250680216510889253">아니요</translation>
 <translation id="5109044022078737958">미미</translation>
 <translation id="6291953229176937411">Finder에서 보기(&amp;S)</translation>
-<translation id="8598687241883907630">Google Account 계정 연결 해제...</translation>
+<translation id="3684341060830149235">Facebook/BitPop Account 계정 연결 해제...</translation>
 <translation id="2556718757702023317">'<ph name="FILE_NAME"/>'을(를) 오프라인에 저장하려면 <ph name="TOTAL_FILE_SIZE"/>의 추가 여유 공간을 확보해야 합니다:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>더 이상 오프라인 액세스가 필요하지 않은 파일을 고정 해제합니다.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>다운로드 폴더에서 파일을 삭제합니다.<ph name="MARKUP_5"/></translation>
@@ -1515,7 +1512,7 @@
 <translation id="4181898366589410653">서버 인증서에서 폐기 매커니즘을 발견하지 못했습니다.</translation>
 <translation id="1515163294334130951">실행</translation>
 <translation id="6914291514448387591"><ph name="PLUGIN_NAME"/>에 실행 권한이 필요합니다.</translation>
-<translation id="1123316951456119629"><ph name="PRODUCT_NAME"/>에서 Google 계정의 연결을 해제하면 데이터는 컴퓨터에 유지되지만 변경사항이 더 이상 Google 계정에 동기화되지 않습니다. Google 계정에 이미 저장된 데이터는 <ph name="BEGIN_LINK"/>Google 대시보드<ph name="END_LINK"/>를 사용하여 삭제할 때까지 그대로 유지됩니다.</translation>
+<translation id="3144050057163527741"><ph name="PRODUCT_NAME"/>에서 BitPop 계정의 연결을 해제하면 데이터는 컴퓨터에 유지되지만 변경사항이 더 이상 Google 계정에 동기화되지 않습니다. Google 계정에 이미 저장된 데이터는 <ph name="BEGIN_LINK"/>Google 대시보드<ph name="END_LINK"/>를 사용하여 삭제할 때까지 그대로 유지됩니다.</translation>
 <translation id="8705331520020532516">일련번호</translation>
 <translation id="1665770420914915777">새 탭 페이지</translation>
 <translation id="5456409301717116725">이 확장 프로그램은 키 파일 '<ph name="KEY_PATH"/>'을(를) 포함합니다. 사용하지 않는 것이 좋습니다.</translation>
@@ -1733,7 +1730,7 @@
 <translation id="7434823369735508263">영어(영국식) 드보락 키보드</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/>일</translation>
 <translation id="8825366169884721447">이 확장프로그램이 네트워크 요청의 요청 헤더 '<ph name="HEADER_NAME"/>을(를) 수정하는 데 실패했습니다. 수정 요청이 다른 확장 프로그램(<ph name="EXTENSION_NAME"/>)와(과) 충돌했습니다.</translation>
-<translation id="5308845175611284862"><ph name="PRODUCT_NAME"/> 동기화를 사용하면 북마크 및 설정 같은 데이터를 컴퓨터 간에 쉽게 공유할 수 있습니다. <ph name="PRODUCT_NAME"/>은(는) 사용자가 Google 계정에 로그인하면 Google에 온라인으로 데이터를 저장하여 이를 동기화합니다.</translation>
+<translation id="291445075019511713"><ph name="PRODUCT_NAME"/> 동기화를 사용하면 북마크 및 설정 같은 데이터를 컴퓨터 간에 쉽게 공유할 수 있습니다. <ph name="PRODUCT_NAME"/>은(는) 사용자가 BitPop 계정에 로그인하면 BitPop에 온라인으로 데이터를 저장하여 이를 동기화합니다.</translation>
 <translation id="1707463636381878959">다른 사용자와 네트워크 공유</translation>
 <translation id="3024663005179499861">잘못된 정책 유형</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -1928,7 +1925,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="1601560923496285236">적용</translation>
 <translation id="2390045462562521613">네트워크 저장 안함</translation>
 <translation id="3348038390189153836">이동식 기기가 검색됨</translation>
-<translation id="8005540215158006229">Chrome을 사용할 준비가 되었습니다.</translation>
+<translation id="3674182693516842999">BitPop을 사용할 준비가 되었습니다.</translation>
 <translation id="1666788816626221136">기타 인증서가 등록되어 있습니다.</translation>
 <translation id="5698727907125761952">공식 아티스트</translation>
 <translation id="4821935166599369261">프로파일링 사용(&amp;P)</translation>
@@ -2081,7 +2078,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="748138892655239008">인증서 기본 제약조건</translation>
 <translation id="457386861538956877">더보기...</translation>
 <translation id="9210991923655648139">스크립트에 액세스 가능:</translation>
-<translation id="4152177296285305182">암호를 아는 사람만 암호화된 데이터를 읽을 수 있습니다. 암호는 Google로 전송되거나 Google에 저장되지 않습니다. 암호가 기억나지 않으면 동기화를 재설정해야 합니다.</translation>
+<translation id="8792136381897173209">암호를 아는 사람만 암호화된 데이터를 읽을 수 있습니다. 암호는 BitPop로 전송되거나 Google에 저장되지 않습니다. 암호가 기억나지 않으면 동기화를 재설정해야 합니다.</translation>
 <translation id="1950295184970569138">* Google 프로필 사진(로드 중)</translation>
 <translation id="8063491445163840780">탭 4 활성화</translation>
 <translation id="5473544328731861874">인텐트 삭제</translation>
@@ -2235,7 +2232,6 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="2563185590376525700">개구리</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/>에서 <ph name="NETWORK_ID"/>에 연결할 수 없습니다. 다른 네트워크를 선택하거나 다시 시도하세요.</translation>
 <translation id="2086712242472027775">계정이 <ph name="PRODUCT_NAME"/>에서 작동하지 않습니다. 도메인 관리자와 상의하거나 일반 Google 계정을 사용하여 로그인하세요.</translation>
-<translation id="1373074393717692190">Google 계정으로 <ph name="PRODUCT_NAME"/>에 로그인하여 맞춤설정한 브라우저 기능을 웹에 저장하고 어떤 휴대기기를 통해서든지 <ph name="PRODUCT_NAME"/>에서 액세스하세요. 즐겨찾는 Google 서비스에 자동으로 로그인할 수도 있습니다.</translation>
 <translation id="7222232353993864120">이메일 주소</translation>
 <translation id="2128531968068887769">네이티브 클라이언트</translation>
 <translation id="7175353351958621980">로드 위치:</translation>
@@ -2490,7 +2486,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="1752977958630076881">브라우저를 종료할 때까지만 로컬 데이터 유지</translation>
 <translation id="7853202427316060426">활동</translation>
 <translation id="8550022383519221471">도메인에 대해 동기화 서비스를 사용할 수 없습니다.</translation>
-<translation id="1436238710092600782">Google 계정 만들기</translation>
+<translation id="8612897762498195031">BitPop 계정 만들기</translation>
 <translation id="3355823806454867987">프록시 설정 변경...</translation>
 <translation id="2882324896611949356">Google 주소록을 다운로드하고 앱 목록에 표시하도록 설정합니다.</translation>
 <translation id="4780374166989101364">실험실 확장 프로그램 API를 사용합니다. 확장 프로그램 갤러리에서는 실험실 API를 사용하는 확장 프로그램을 업로드할 수 없습니다.</translation>
@@ -2584,7 +2580,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="8314066201485587418">브라우저를 종료할 때 쿠키 및 기타 사이트 데이터 삭제</translation>
 <translation id="4094105377635924481">탭 컨텍스트 메뉴에 그룹화 추가</translation>
 <translation id="765676359832457558">고급 설정 숨기기</translation>
-<translation id="7626032353295482388">크롬에 오신 것을 환영합니다.</translation>
+<translation id="185658551912723674">크롬에 오신 것을 환영합니다.</translation>
 <translation id="8655295600908251630">채널</translation>
 <translation id="8250690786522693009">라틴어</translation>
 <translation id="2119721408814495896"><ph name="CLOUD_PRINT_NAME"/> 커넥터는 Microsoft XPS Essentials Pack을 설치해야 합니다.</translation>
@@ -2971,7 +2967,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="9072684888578654899">&lt;p&gt;
           다른 기기에서 Chrome으로 연 탭이 여기에 표시됩니다.
           &lt;/p&gt;
-          &lt;a href=&quot;#enablesync&quot;&gt;
+          &lt;a href="#enablesync"&gt;
           동기화를 설정하세요.
           &lt;/p&gt;</translation>
 <translation id="889901481107108152">죄송합니다. 현재 플랫폼에서 사용할 수 없는 실험실 기능입니다.</translation>
@@ -3121,7 +3117,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="6007237601604674381">이동에 실패했습니다. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">압축하는 동안 임시 zip 파일을 만들지 못했습니다.</translation>
 <translation id="1881456419707551346">연결 세부정보</translation>
-<translation id="1064912851688322329">Google 계정 연결 해제</translation>
+<translation id="1175819364738375266">Facebook/BitPop 계정 연결 해제</translation>
 <translation id="1294298200424241932">신뢰 설정 수정:</translation>
 <translation id="1407135791313364759">모두 열기</translation>
 <translation id="1434928358870966081">가속화된 2D 캔버스 사용 중지</translation>
@@ -3325,7 +3321,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="5293659407874396561"><ph name="SUBJECT"/>(<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">유효한 URL이어야 함</translation>
 <translation id="3464726836683998962">모바일 데이터 로밍 사용 안 함</translation>
-<translation id="8986494364107987395">사용 통계 및 충돌 보고서를 Google에 자동으로 보내기</translation>
+<translation id="7133428520955276418">사용 통계 및 충돌 보고서를 House of Life에 자동으로 보내기</translation>
 <translation id="7070714457904110559">위치 정보 기능에 실험실 확장 프로그램을 사용하도록 설정합니다. 여기에는 운영체제 위치 API를 사용(가능한 경우)하고 더 정확한 위치 확인을 위해 로컬 네트워크 설정 데이터를 Google 위치 서비스에 전송하는 기능이 포함됩니다.</translation>
 <translation id="6701535245008341853">프로필을 가져올 수 없습니다.</translation>
 <translation id="8303655282093186569">병음 입력 설정</translation>
@@ -3361,7 +3357,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="4762295713053835808">환경설정</translation>
 <translation id="3445092916808119474">기본 디스플레이로 설정</translation>
 <translation id="6374100501221763867">하드웨어 가속을 통한 동영상 디코딩을 사용 중지합니다.</translation>
-<translation id="7477347901712410606">암호가 생각나지 않으면 <ph name="BEGIN_LINK"/>Google 대시보드<ph name="END_LINK"/>를 통해 동기화를 중지하고 재설정합니다.</translation>
+<translation id="1257410854647617646">암호가 생각나지 않으면 <ph name="BEGIN_LINK"/>BitPop 대시보드<ph name="END_LINK"/>를 통해 동기화를 중지하고 재설정합니다.</translation>
 <translation id="3085235303151103497">패키지 앱에 대해 디버깅을 사용합니다.</translation>
 <translation id="2645575947416143543">하지만 인증서를 자체적으로 만드는 조직에서 근무하고 있으며 그러한 인증서를 사용하여 해당 조직의 내부 웹사이트에 연결하려는 경우 이 문제를 안전하게 해결할 수 있습니다. 조직의 루트 인증서를 '루트 인증서'로 가져오고 조직에서 인증서를 발행하고 확인하면 인증서가 신뢰를 받게 되므로 다음 번에 내부 웹사이트에 연결하려 할 때 이러한 오류가 표시되지 않습니다. 컴퓨터에 새 루트 인증서를 추가하는 방법에 대한 자세한 내용은 조직의 담당 직원에게 문의하시기 바랍니다.</translation>
 <translation id="1056898198331236512">경고</translation>
@@ -3561,7 +3557,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="4971925105143343452">부분화면</translation>
 <translation id="3454157711543303649">활성화 완료</translation>
 <translation id="884923133447025588">폐기 매커니즘을 찾을 수 없습니다.</translation>
-<translation id="7801746894267596941">암호를 아는 사람만 암호화된 데이터를 읽을 수 있습니다. 암호는 Google로 전송되거나 Google에 저장되지 않습니다. 암호가 기억나지 않으면</translation>
+<translation id="2077681924461579449">암호를 아는 사람만 암호화된 데이터를 읽을 수 있습니다. 암호는 BitPop로 전송되거나 Google에 저장되지 않습니다. 암호가 기억나지 않으면</translation>
 <translation id="5406835729608468430">다음을 사용하여 보기...</translation>
 <translation id="291886813706048071">여기에서 <ph name="SEARCH_ENGINE"/>(으)로 검색할 수 있습니다.</translation>
 <translation id="556042886152191864">버튼</translation>
@@ -3744,7 +3740,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="8948393169621400698"><ph name="HOST"/>에서 플러그인 항상 허용</translation>
 <translation id="6527303717912515753">공유</translation>
 <translation id="4285498937028063278">고정 해제</translation>
-<translation id="2588322182880276190">Chrome 로고</translation>
+<translation id="193954205383164322">BitPop 로고</translation>
 <translation id="7893008570150657497">컴퓨터에서 사진, 음악, 기타 미디어에 액세스</translation>
 <translation id="5449624072515809082">입력하는 동안 텍스트의 자동 수정을 사용하도록 설정합니다. 동기적 맞춤법 검사는 이 기능과 호환되지 않습니다.</translation>
 <translation id="8291808604460602261">애플리케이션에 연결할 수 있도록 웹 인텐트를 허용합니다.</translation>
@@ -4090,7 +4086,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="3021678814754966447">프레임 소스 보기(&amp;V)</translation>
 <translation id="8601206103050338563">TLS WWW 클라이언트 인증</translation>
 <translation id="1692799361700686467">여러 사이트의 쿠키를 허용했습니다.</translation>
-<translation id="5187295959347858724">이제 <ph name="SHORT_PRODUCT_NAME"/>에 로그인되었으며 북마크와 방문기록, 기타 설정이 내 Google 계정과 동기화됩니다.</translation>
+<translation id="6928105098560478094">이제 <ph name="SHORT_PRODUCT_NAME"/>에 로그인되었으며 북마크와 방문기록, 기타 설정이 내 BitPop 계정과 동기화됩니다.</translation>
 <translation id="7381706763856392587">'<ph name="FILENAME"/>' 삭제</translation>
 <translation id="529232389703829405"><ph name="DATE"/>에 <ph name="DATA_AMOUNT"/>의 데이터를 구입했습니다.</translation>
 <translation id="7419106976560586862">프로필 경로</translation>
@@ -4159,7 +4155,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="6692173217867674490">잘못된 암호</translation>
 <translation id="5550431144454300634">입력 내용 자동 수정</translation>
 <translation id="3308006649705061278">조직 구성 단위(OU)</translation>
-<translation id="8912362522468806198">Google 계정</translation>
+<translation id="9034203691147880734">BitPop 계정</translation>
 <translation id="4839847978919684242"><ph name="SELCTED_FILES_COUNT"/>개의 항목이 선택됨</translation>
 <translation id="4443536555189480885">도움말(&amp;H)</translation>
 <translation id="6993309531105463648">한 개 또는 두 개의 브라우저 및 앱 창에서 자동 창 배치 사용하지 않습니다.</translation>
@@ -4536,7 +4532,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="1177437665183591855">알 수 없는 서버 인증서 오류</translation>
 <translation id="3394150261239285340"><ph name="HOST"/>에서 사용자의 카메라와 마이크를 사용하려고 합니다.</translation>
 <translation id="8467473010914675605">한국어 입력 방법</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/>에서 데이터를 Google 계정과 안전하게 동기화합니다. 모든 데이터를 동기화하거나 동기화할 데이터 유형과 암호화 설정을 맞춤설정할 수 있습니다.</translation>
+<translation id="7938022885346429483"><ph name="PRODUCT_NAME"/>에서 데이터를 BitPop 계정과 안전하게 동기화합니다. 모든 데이터를 동기화하거나 동기화할 데이터 유형과 암호화 설정을 맞춤설정할 수 있습니다.</translation>
 <translation id="2639739919103226564">상태:</translation>
 <translation id="824543159844843373">실행기 항목 3 활성화</translation>
 <translation id="6923900367903210484">저작권</translation>
@@ -4564,7 +4560,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="2101797668776986011">Pepper 3D</translation>
 <translation id="1581962803218266616">Finder에서 보기</translation>
 <translation id="9100765901046053179">고급 설정</translation>
-<translation id="203168018648013061">동기화 오류: Google 대시보드를 통해 동기화를 다시 설정하세요.</translation>
+<translation id="2936690273131526650">동기화 오류: BitPop 대시보드를 통해 동기화를 다시 설정하세요.</translation>
 <translation id="1405126334425076373">마우스 커서</translation>
 <translation id="6671493224572088110"><ph name="VIDEO_NAME"/> 시청</translation>
 <translation id="6096326118418049043">X.500 이름</translation>
@@ -4685,7 +4681,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="2050339315714019657">세로 방향</translation>
 <translation id="6978839998405419496"><ph name="NUMBER_ZERO"/> days ago</translation>
 <translation id="8273027367978594412">이를 사용하면 데스크톱 컴퓨터의 Chrome에서 게스트 사용자를 사용할 수 있습니다.</translation>
-<translation id="8188199528179562676"><ph name="PRODUCT_NAME"/>에서 Google 계정의 연결을 해제하면 데이터는 휴대기기에 유지되지만 변경사항이 더 이상 Google 계정에 동기화되지 않습니다. Google 계정에 이미 저장된 데이터는 <ph name="BEGIN_LINK"/>Google 대시보드<ph name="END_LINK"/>를 사용하여 삭제하기 전까지는 그대로 유지됩니다.</translation>
+<translation id="3972854587947107012"><ph name="PRODUCT_NAME"/>에서 BitPop 계정의 연결을 해제하면 데이터는 휴대기기에 유지되지만 변경사항이 더 이상 Google 계정에 동기화되지 않습니다. Google 계정에 이미 저장된 데이터는 <ph name="BEGIN_LINK"/>Google 대시보드<ph name="END_LINK"/>를 사용하여 삭제하기 전까지는 그대로 유지됩니다.</translation>
 <translation id="8261490674758214762">가능한 대상:</translation>
 <translation id="5112577000029535889">개발자 도구(&amp;D)</translation>
 <translation id="2301382460326681002">확장 프로그램 루트 디렉토리가 잘못되었습니다.</translation>

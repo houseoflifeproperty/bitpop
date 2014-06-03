@@ -9,7 +9,7 @@
 #include "chrome_frame/utils.h"
 
 static const wchar_t kChromeFrameMetricsKey[] =
-    L"Software\\Google\\ChromeFrameMetrics";
+    L"Software\\HouseOfLife\\BitPopFrameMetrics";
 
 base::LazyInstance<CrashMetricsReporter>
     g_crash_metrics_instance_ = LAZY_INSTANCE_INITIALIZER;

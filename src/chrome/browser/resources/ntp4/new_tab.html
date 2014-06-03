@@ -145,14 +145,13 @@
 <div id="login-status-bubble-contents">
   <div id="login-status-message-container">
     <span i18n-content="login_status_message"></span>
+    <br/><br/>
+    <!-- Next span contains <a href="#" id="login-status-advanced"></a> link -->
+    <span i18n-values=".innerHTML:login_encryption_disabled_message"></span>
     <a id="login-status-learn-more" i18n-content="learn_more"
         i18n-values="href:login_status_url" target="_blank"></a>
   </div>
   <div class="login-status-row">
-    <div id="login-status-advanced-container">
-      <a id="login-status-advanced"
-          i18n-content="login_status_advanced" href="#"></a>
-    </div>
     <button id="login-status-dismiss" i18n-content="login_status_dismiss">
     </button>
   </div>

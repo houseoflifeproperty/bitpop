@@ -47,6 +47,7 @@ class APIPermission {
     kAudioCapture,
     kAutoTestPrivate,
     kBackground,
+    kBitpopFacebookChat,
     kBluetooth,
     kBluetoothDevice,
     kBookmark,

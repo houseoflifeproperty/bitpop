@@ -10,6 +10,8 @@
 #include "base/time.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_result_page_tracker.h"
+#include "chrome/browser/signin/signin_result_page_tracker_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -62,6 +64,18 @@ static bool IsValidUserFlowAction(int action) {
           action <= SYNC_PROMO_LAST_VALID_JS_ACTION) ||
          action == SYNC_PROMO_LEFT_DURING_THROBBER;
 }
+
+const syncer::ModelType kDataTypes[] = {
+  syncer::APPS,
+  syncer::AUTOFILL,
+  syncer::BOOKMARKS,
+  syncer::EXTENSIONS,
+  syncer::PREFERENCES,
+  syncer::SESSIONS,
+  syncer::THEMES,
+  syncer::TYPED_URLS
+};
+static const size_t kNumDataTypes = arraysize(kDataTypes);
 
 }  // namespace
 
@@ -130,6 +144,10 @@ void SyncPromoHandler::RegisterMessages() {
       "SyncPromo:UserSkipped",
       base::Bind(&SyncPromoHandler::HandleUserSkipped,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:StateSet",
+      base::Bind(&SyncPromoHandler::HandleStateSet,
+                 base::Unretained(this)));
   SyncSetupHandler::RegisterMessages();
 }
 
@@ -149,7 +167,12 @@ void SyncPromoHandler::DisplayConfigureSync(bool show_advanced,
     // everything by default. This makes the first run experience simpler. Note,
     // there's an advanced link in the sync promo that takes users to Settings
     // where the configure pane is not skipped.
-    service->OnUserChoseDatatypes(true, syncer::ModelTypeSet());
+    syncer::ModelTypeSet data_types;
+    for (int i = 0; i < (int)kNumDataTypes; ++i) {
+      data_types.Put(kDataTypes[i]);
+    }
+
+    service->OnUserChoseDatatypes(false, data_types);
     ConfigureSyncDone();
   }
 }
@@ -263,6 +286,18 @@ void SyncPromoHandler::HandleUserFlowAction(const base::ListValue* args) {
 void SyncPromoHandler::HandleUserSkipped(const base::ListValue* args) {
   SyncPromoUI::SetUserSkippedSyncPromo(Profile::FromWebUI(web_ui()));
   RecordUserFlowAction(SYNC_PROMO_SKIP_CLICKED);
+}
+
+void SyncPromoHandler::HandleStateSet(const base::ListValue* args) {
+  std::string state;
+  CHECK(args->GetString(0, &state));
+
+
+  SigninResultPageTracker* tracker =
+      SigninResultPageTrackerFactory::GetForProfile(
+          Profile::FromWebUI(web_ui()));
+  if (tracker)
+    tracker->Track(web_ui()->GetWebContents(), state, NULL);
 }
 
 int SyncPromoHandler::GetViewCount() const {

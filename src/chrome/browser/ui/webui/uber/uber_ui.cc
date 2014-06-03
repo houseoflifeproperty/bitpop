@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/browser/ui/webui/extensions/extensions_ui.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
@@ -62,6 +63,10 @@ ChromeWebUIDataSource* CreateUberHTMLSource() {
                     ASCIIToUTF16(chrome::kChromeUISettingsFrameURL));
   source->AddString("settingsHost",
                     ASCIIToUTF16(chrome::kChromeUISettingsHost));
+  source->AddString("bitpopSettingsHost",
+                    ASCIIToUTF16(chrome::kChromeUIBitpopSettingsHost));
+  source->AddString("bitpopSettingsFrameURL",
+                    ASCIIToUTF16(chrome::kChromeUIBitpopSettingsFrameURL));
 
   return source;
 }
@@ -118,6 +123,10 @@ ChromeWebUIDataSource* CreateUberFrameHTMLSource(Profile* profile) {
       chrome::kChromeUIHistoryHost);
   source->AddString("overridesHistory",
                     ASCIIToUTF16(overridesHistory ? "yes" : "no"));
+  source->AddString("bitpopSettingsHost",
+                    ASCIIToUTF16(chrome::kChromeUIBitpopSettingsHost));
+  source->AddLocalizedString("bitpopSettingsDisplayName",
+                             IDS_BITPOP_SETTINGS_TITLE);
 
   return source;
 }
@@ -132,6 +141,7 @@ UberUI::UberUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   RegisterSubpage(chrome::kChromeUIHelpFrameURL);
   RegisterSubpage(chrome::kChromeUIHistoryFrameURL);
   RegisterSubpage(chrome::kChromeUISettingsFrameURL);
+  RegisterSubpage(chrome::kChromeUIBitpopSettingsFrameURL);
   RegisterSubpage(chrome::kChromeUIUberFrameURL);
 }
 
